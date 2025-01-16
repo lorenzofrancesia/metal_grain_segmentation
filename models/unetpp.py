@@ -61,8 +61,9 @@ class Encoder(nn.Module):
     
 
 class Decoder(nn.Module):
-    def __init__(self, channels=(3,32,64,128,256,512), dropout=False, dropout_prob=0.5):
+    def __init__(self, channels=(3,32,64,128,256,512), deep_supervision=False, dropout=False, dropout_prob=0.5):
         super(Decoder, self).__init__()
+        self.deep_supervision = deep_supervision
         
         # Create encoder blocks based on the number of channels skipping channels[0] which is the input
         self.nested_level_one = nn.ModuleList([VGG(channels[i+1]+channels[i+2], channels[i+1], channels[i+1], dropout=dropout, dropout_prob=dropout_prob)
@@ -81,12 +82,6 @@ class Decoder(nn.Module):
     def forward(self, encoder_features):
         # Empty list for intermediate results
         nested_one_out = []
-        # for i, block in enumerate(self.nested_level_one):
-        #     print(block)
-        #     x = block(torch.cat([encoder_features[i], self.upsample(encoder_features[i+1], encoder_features[i])], dim=1))
-        #     print(x.shape)
-        #     nested_one_out.append(x)
-            
         for i, block in enumerate(self.nested_level_one):
             x = block(torch.cat([encoder_features[i], self.upsample(encoder_features[i+1], encoder_features[i])], dim=1))
             nested_one_out.append(x)
@@ -105,18 +100,23 @@ class Decoder(nn.Module):
 
         nested_four_out = self.nested_level_four(torch.cat([encoder_features[0], nested_one_out[0], nested_two_out[0], nested_three_out[0], self.upsample(nested_three_out[1], nested_three_out[0])], dim=1))
         
-        return nested_four_out
+        if self.deep_supervision:
+            return nested_one_out[0], nested_two_out[0], nested_three_out[0], nested_four_out
+        else:
+            return nested_four_out
 
 
-class UPPNet(nn.Module):
-    def __init__(self, channels=(3,32,64,128,256,512), class_number=1, dropout=False, dropout_prob=0.5):
-        super(UPPNet, self).__init__()
+class UNetPP(nn.Module):
+    def __init__(self, channels=(3,32,64,128,256,512), num_classes=1, deep_supervision=False, dropout=False, dropout_prob=0.5):
+        super(UNetPP, self).__init__()
+        self.deep_supervision = deep_supervision
+        
         # Initialize encoder and decoder
         self.encoder = Encoder(channels, dropout=dropout, dropout_prob=dropout_prob)
-        self.decoder = Decoder(channels, dropout=dropout, dropout_prob=dropout_prob)
+        self.decoder = Decoder(channels, deep_supervision=deep_supervision, dropout=dropout, dropout_prob=dropout_prob)
         
-        # Initialize regression head and store the class variables
-        self.head = nn.Conv2d(channels[1], class_number, kernel_size=1)
+        # Head
+        self.head = nn.Conv2d(channels[1], num_classes, kernel_size=1)
         
     def forward(self, x):
         # Features from encoder
@@ -126,10 +126,10 @@ class UPPNet(nn.Module):
         decoder_features = self.decoder(encoder_features)
         
         # Pass features through head
-        map = self.head(decoder_features[-1])
+        if self.deep_supervision:
+            result = [self.head(feature) for feature in decoder_features]
+            return result
+        else:
+            result = self.head(decoder_features[-1])
             
-        return map
-    
-    
-net = UPPNet()
-summary(net, input_size=(1, 3, 256, 256))
+        return result

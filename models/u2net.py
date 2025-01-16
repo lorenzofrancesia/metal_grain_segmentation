@@ -1,14 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchinfo import summary
-import sys
 
-parent_module = sys.modules['.'.join(__name__.split('.')[:-1]) or '__main__']
-if __name__ == '__main__' or parent_module.__name__ == '__main__':
-    from initialization import init_weights  # Corrected relative import
-else:
-    from .initialization import init_weights
+from models.initialization import init_weights
 
   
 class ConvBlockU2Net(nn.Module):
