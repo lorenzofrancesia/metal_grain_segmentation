@@ -5,6 +5,11 @@ import tqdm
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader # Unless I write my own data loader
 from torch import optim
+import sys
+from pathlib import Path
+
+# Add the project directory to sys.path
+sys.path.append(str(Path(__file__).resolve().parent))
 
 #Models
 from models.unet import UNet
