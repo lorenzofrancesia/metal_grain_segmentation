@@ -1,95 +1,56 @@
 import argparse
-import logging 
 import os
 from tqdm import tqdm
 import numpy as np
+import csv
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader # Unless I write my own data loader
 from torch import optim
+import torchvision.transforms as transforms
 
 from utils.metrics import BinaryMetrics
 from data.dataset import SegmentationDataset, SegmentationTransform
 from loss.tversky import TverskyLoss
-
-#Models
-from models.unet import UNet
-from models.u2net import U2Net
-from models.unetpp import UNetPP
-
-def get_args():
-    parser = argparse.ArgumentParser(description='Train a U-Net model')
-    parser.add_argument('--data_dir', type=str, default='data', help='Directory containing the dataset')
-    parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training')
-    parser.add_argument('--epochs', type=int, default=10, help='Number of epochs to train for')
-    parser.add_argument('--lr', type=float, default=0.001, help='Learning rate for optimizer')
-    parser.add_argument('--model', type=str, default='unet', help='Model to train')
-    parser.add_argument('--output_dir', type=str, default='output', help='Directory to save model checkpoints')
-    parser.add_argument('--log_file', type=str, default='train.log', help='File to save training logs')
+from utils.output import initialize_output_folder
+from utils.input import get_args, get_model
     
-    return parser.parse_args()
-
-
-def get_model(args):
-    if args.model == 'unet':
-        model = UNet()
-    elif args.model == 'u2net':
-        model = U2Net()
-    elif args.model == 'unet++':
-        model = UNetPP()
-    else:
-        raise ValueError('Model type not recognized')
-        
-    return model
-
-def get_dataloaders(data_dir, batch_size):
-    
-    train_dataset = SegmentationDataset(
-        image_dir=os.path.join(data_dir, "train/images"),
-        mask_dir=os.path.join(data_dir, "train/masks")
-        )
-    
-    val_dataset = SegmentationDataset(
-        image_dir=os.path.join(data_dir, "val/images"),
-        mask_dir=os.path.join(data_dir, "val/masks")
-        )
-    
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
-    
-    return train_dataloader, val_dataloader
-
-
 
 class Trainer():
     
     def __init__(self, 
                  model, 
-                 train_loader,
-                 val_loader=None,
-                 test_loader=None,
+                 data_dir,
+                 batch_size=16,
+                 normalize=False,
+                 train_transform= transforms.ToTensor(),
+                 test_transform=transforms.ToTensor(),
                  optimizer=optim.Adam, 
                  loss_function=nn.BCEWithLogitsLoss(),
                  metrics=BinaryMetrics(),
                  device='cuda' if torch.cuda.is_available() else 'cpu',
                  lr_scheduler=None,
                  epochs=10,
-                 checkpoint_dir=None,
+                 output_dir=None,
                  resume_from_checkpoint=False,
                  early_stopping=10,
                  verbose=True
                  ):
         
         self.model = model
-        self.train_loader = train_loader
-        self.val_loader = val_loader
-        self.test_loader = test_loader
         self.optimizer = optimizer
         self.loss_function = loss_function
         self.metrics = metrics
         self.device = device
         self.lr_scheduler = lr_scheduler
+        
+        # Dataset
+        self.data_dir = data_dir
+        self.train_transform = train_transform
+        self.test_transform = test_transform
+        self.batch_size = batch_size
+        self.normalize = normalize
         
         # Training parameters 
         self.epochs = epochs
@@ -102,18 +63,24 @@ class Trainer():
         self.early_stopping_counter = 0
         
         # Checkpointing
-        self.checkpoint_dir = checkpoint_dir
+        self.output_dir = output_dir
+        self.checkpoint_dir = os.path.join(self.output_dir, "checkpoints")
         self.resume_from_checkpoint = resume_from_checkpoint
         self.verbose = verbose
         
         # Initialize model and optimizer
         self._initialize_training()
+        self._initialize_csv()
         
+        # Initialize dataloaders 
+        self._get_dataloaders()
+    
+    
     def _initialize_training(self):
         self.model.to(self.device)
         
-        if self.checkpoint_dir and not os.path.exists(self.checkpoint_dir):
-            os.makedirs(self.checkpoint_dir)
+        if self.output_dir and not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
         
         if self.resume_from_checkpoint:
             self._load_checkpoint()
@@ -121,6 +88,42 @@ class Trainer():
         #if self.verbose:
         #    print(self.model)
         #    print(self.optimizer)
+        
+    def _initialize_csv(self):
+        self.results_csv = os.path.join(self.output_dir, "results", "results.csv")
+        
+        with open(self.results_csv, mode="w+", newline="") as file:
+            writer = csv.writer(file)
+            headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate", "Precision", "Recall", "F1", "Accucary", "Dice", "IoU"]
+            writer.writerow(headers)
+            
+    def _log_results_to_csv(self, epoch, train_loss, metrics):
+        if self.results_csv:
+            with open(self.results_csv, mode="a", newline="") as file:
+                writer = csv.writer(file)
+                row = [epoch, train_loss, metrics["val_loss"], self.optimizer.param_groups[0]['lr']]
+                row += [metrics.get(metric, 0) for metric in self.metrics.metrics.keys()]
+                writer.writerow(row)
+    
+    def _get_dataloaders(self):
+        self.train_dataset = SegmentationDataset(
+            image_dir=os.path.join(self.data_dir, "train/images"),
+            mask_dir=os.path.join(self.data_dir, "train/masks"), 
+            image_transform=self.train_transform,
+            mask_transform=self.train_transform,
+            normalize=self.normalize
+            )
+        
+        self.val_dataset = SegmentationDataset(
+            image_dir=os.path.join(self.data_dir, "val/images"),
+            mask_dir=os.path.join(self.data_dir, "val/masks"),
+            image_transform=self.train_transform,
+            mask_transform=self.train_transform,
+            normalize=self.normalize            
+            )
+        
+        self.train_loader = DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
+        self.val_loader = DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False)    
 
     def _save_checkpoint(self, checkpoint_path):
         checkpoint = {
@@ -130,7 +133,7 @@ class Trainer():
             'global_step': self.global_step,
             'lr_scheduler': self.lr_scheduler.state_dict() if self.lr_scheduler else None
         }
-        torch.save(checkpoint, checkpoint_path)
+        #torch.save(checkpoint, checkpoint_path)
         if self.verbose:
             print(f'Checkpoint saved at {checkpoint_path}')
     
@@ -171,13 +174,10 @@ class Trainer():
             for batch in self.val_loader:
                 inputs, targets = batch
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
-                
-                #print(f"Inputs shape:{inputs.shape}, targets shape: {targets.shape}")
-                
+                                
                 outputs = self.model(inputs)
-                
-                #print(f"Outputs shape:{outputs.shape}, targets shape: {targets.shape}")
-                
+                output_probs = torch.sigmoid(outputs)
+                                
                 loss = self.loss_function(outputs, targets)
                 val_loss += loss.item()
                 
@@ -214,7 +214,8 @@ class Trainer():
                 val_results = self._validate()
                 val_loss = val_results["val_loss"]
                 if self.verbose:
-                    print(f'\nEpoch {epoch+1}/{self.epochs} - Training Loss: {train_loss:.4f} - Validation Loss: {val_loss:.4f}')
+                    print(f'\nEpoch {epoch+1}/{self.epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f} - P: {val_results["Precision"]:.4f} - R: {val_results["Recall"]:.4f} - Acc: {val_results["Accuracy"]:.4f} - F1: {val_results["F1"]:.4f} - IoU: {val_results["IoU"]:.4f} - Dice: {val_results["Dice"]:.4f}')
+                self._log_results_to_csv(epoch+1, train_loss, val_results)
             else:
                 val_loss = train_loss
                 if self.verbose:
@@ -232,8 +233,8 @@ class Trainer():
                     break
                         
             # Save checkpoint
-            if self.checkpoint_dir and self.epochs%5==0:
-                checkpoint_path = f"{self.checkpoint_dir}/epoch_{epoch+1}.pth"
+            if self.output_dir and self.epochs%5==0:
+                checkpoint_path = f"{self.output_dir}/epoch_{epoch+1}.pth"
                 self._save_checkpoint(checkpoint_path)
                     
             # Update lr with scheduler
@@ -242,6 +243,18 @@ class Trainer():
 
                 
     def test(self):
+        
+        self.test_dataset = SegmentationDataset(
+            image_dir=os.path.join(self.data_dir, "test/images"),
+            mask_dir=os.path.join(self.data_dir, "tst/masks"),
+            image_transform=self.test_transform,
+            mask_transform=self.test_transform,
+            normalize=self.normalize            
+            )
+        
+        self.test_loader = DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False)
+        
+        
         self.model.eval()
         test_loss = 0
         all_outputs = []
@@ -275,23 +288,23 @@ class Trainer():
 def main():
     
     args = get_args()
-    logging.basicConfig(filename=args.log_file, level=logging.INFO)
     
-    train_loader, val_loader = get_dataloaders(args.data_dir, args.batch_size)
-    model = UNet()
+    output_dir, _, _, _ = initialize_output_folder(args.output_dir)
+    model = get_model(args)
+    
     loss_function = TverskyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
     
     trainer = Trainer(model=model,
-                      train_loader=train_loader,
-                      val_loader=val_loader,
+                      data_dir=args.data_dir,
+                      batch_size=args.batch_size,
                       optimizer=optimizer,
                       loss_function=loss_function,
                       metrics=BinaryMetrics(),
                       lr_scheduler=scheduler,
-                      epochs=10,
-                      checkpoint_dir=args.output_dir,
+                      epochs=args.epochs,
+                      output_dir=output_dir,
                       )
     
     trainer.train()

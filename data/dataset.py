@@ -8,7 +8,16 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 
 class SegmentationDataset(Dataset):
-    
+    """
+    A dataset class for metal grain segmentation.
+
+    Args:
+        image_dir (str): Directory containing the images.
+        mask_dir (str): Directory containing the masks.
+        image_transform (callable, optional): A function/transform to apply to the images. Default is transforms.ToTensor().
+        mask_transform (callable, optional): A function/transform to apply to the masks. Default is transforms.ToTensor().
+        normalize (bool, optional): Whether to normalize the images. Default is False.
+    """
     def __init__(self, image_dir, mask_dir, image_transform=transforms.ToTensor(), mask_transform=transforms.ToTensor(), normalize=False):
         
         self.image_dir = image_dir
@@ -39,6 +48,7 @@ class SegmentationDataset(Dataset):
         
         image = self.image_transform(image)
         mask = self.mask_transform(mask)
+        mask = self._convert_binary(mask)
             
         if self.normalize and self.mean is not None and self.std is not None:
             normalize_transform = transforms.Normalize(mean=self.mean, std=self.std)
@@ -50,7 +60,17 @@ class SegmentationDataset(Dataset):
         if len(self.image_paths) != len(self.mask_paths):
             raise ValueError("The number of images and masks do not match.")
 
-    
+    def _convert_binary(self, mask):
+        
+        if isinstance(mask, torch.Tensor):
+            binary_mask = (mask > 0.5).float()
+        else:
+            mask_tensor = torch.from_numpy(np.array(mask)).float() / 255.0
+            binary_mask = (mask_tensor > 0.5).float()
+        
+        return binary_mask
+        
+        
     def _dataset_statistics(self):
         image_sizes = []
         for img_path in self.image_paths:
@@ -102,7 +122,13 @@ class SegmentationTransform:
     
 
 def visualize_dataset(dataset, num_samples=32):
-    
+    """
+    Visualize a few samples from the dataset along with their corresponding masks.
+
+    Args:
+        dataset (Dataset): The dataset to visualize.
+        num_samples (int, optional): The number of samples to visualize. Default is 32.
+    """
     num_samples = min(num_samples, len(dataset))
     
     cols = int(np.ceil(np.sqrt(2 * num_samples)))
@@ -129,6 +155,15 @@ def visualize_dataset(dataset, num_samples=32):
     
     
 def image_for_plot(image):
+    """
+    Convert the image to a format suitable for plotting.
+
+    Args:
+        image (np.ndarray or torch.Tensor): The input image.
+
+    Returns:
+        np.ndarray: The image in a format suitable for plotting.
+    """
     if isinstance(image, torch.Tensor):
         image = image.permute(1, 2, 0).numpy()
     if image.dtype != np.uint8:
@@ -137,11 +172,16 @@ def image_for_plot(image):
 
 
 def class_distribution(dataset, classes_names=['Background', 'Foreground']):
+    """
+    Calculate and plot the class distribution of the dataset.
+
+    Args:
+        dataset (Dataset): The dataset to analyze.
+        class_names (list, optional): List of class names. Default is ['Background', 'Foreground'].
+    """
     total_pixels = 0
     foreground_pixels = 0
-    
-    
-    
+
     for _, mask in dataset:
         mask = mask.permute(1, 2, 0).numpy()
         total_pixels += mask.shape[0]*mask.shape[1]
@@ -165,7 +205,13 @@ def class_distribution(dataset, classes_names=['Background', 'Foreground']):
 
 
 def visualize_overlay(dataset, idx=None, alpha=0.5):
-    
+    """
+    Calculate and plot the class distribution of the dataset.
+
+    Args:
+        dataset (Dataset): The dataset to analyze.
+        class_names (list, optional): List of class names. Default is ['Background', 'Foreground'].
+    """
     if idx is None:
         idx = np.random.randint(0, len(dataset))
         
