@@ -9,13 +9,14 @@ from torchvision import transforms
 
 class SegmentationDataset(Dataset):
     
-    def __init__(self, image_dir, mask_dir, transform=transforms.ToTensor, normalize=False):
+    def __init__(self, image_dir, mask_dir, image_transform=transforms.ToTensor(), mask_transform=transforms.ToTensor(), normalize=False):
         
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.image_paths = sorted(os.listdir(image_dir))
         self.mask_paths = sorted(os.listdir(mask_dir))
-        self.transform = transform
+        self.image_transform = image_transform
+        self.mask_transform = mask_transform
         self.mean = None
         self.std = None
         self.normalize = normalize
@@ -36,11 +37,12 @@ class SegmentationDataset(Dataset):
         image = Image.open(img_path).convert("RGB")
         mask = Image.open(mask_path).convert("L")
         
+        image = self.image_transform(image)
+        mask = self.mask_transform(mask)
+            
         if self.normalize and self.mean is not None and self.std is not None:
-            image = self._normalize_image(image)
-        
-        if self.transform:
-            image, mask = self.transform(image, mask)
+            normalize_transform = transforms.Normalize(mean=self.mean, std=self.std)
+            image = normalize_transform(image)
             
         return image, mask
     
@@ -82,15 +84,6 @@ class SegmentationDataset(Dataset):
         self.mean = pixel_sum / total_pixels
         self.std = np.sqrt(pixel_squared_sum / total_pixels - self.mean**2)
         
-    def _normalize_image(self, image):
-
-        image_tensor = torch.tensor(image.getdata()).view(3, *image.size[::-1]) / 255.0
-        
-        normalize_transform = transforms.Normalize(mean=self.mean.tolist(), std=self.std.tolist())
-        normalized_tensor = normalize_transform(image_tensor)
-        
-        normalized_image = Image.fromarray(normalized_tensor.permute(1,2,0).numpy() * 255).astype('uint8')
-        return normalized_image
 
     
 class SegmentationTransform:
@@ -184,7 +177,7 @@ def visualize_overlay(dataset, idx=None, alpha=0.5):
     plt.imshow(image, alpha=1.0)
     plt.imshow(mask.squeeze(0), cmap="jet", alpha=alpha)
     plt.axis("off")
-    plt.title(f"Overlay of Image and Mask {{Index: {idx}}}")
+    plt.title(f"Overlay of Image and Mask [Index: {idx}]")
     plt.show()
 
 
@@ -200,14 +193,14 @@ if __name__ == '__main__':
     image_dir = os.path.join(path, "images")
     mask_dir = os.path.join(path, "masks")
     
-    dataset_norm = SegmentationDataset(image_dir=image_dir, mask_dir=mask_dir, normalize=True)
-    # dataset = SegmentationDataset(image_dir=image_dir, mask_dir=mask_dir, transform=transform)
+    # dataset_norm = SegmentationDataset(image_dir=image_dir, mask_dir=mask_dir, normalize=True)
+    dataset = SegmentationDataset(image_dir=image_dir, mask_dir=mask_dir)
     
-    # img, _ = dataset[0]
-    img_norm, _ = dataset_norm[0]
+    # img, _ = dataset[1]
+    # img_norm, _ = dataset_norm[1]
     
     # img = image_for_plot(img)
-    img_norm = image_for_plot(img_norm)
+    # img_norm = image_for_plot(img_norm)
     
     # # Plot the images side by side
     # fig, axes = plt.subplots(1, 2, figsize=(10, 5))
@@ -221,6 +214,6 @@ if __name__ == '__main__':
     # plt.tight_layout()
     # plt.show()
 
-    #class_distribution(dataset)
-    #visualize_overlay(dataset)
+    class_distribution(dataset)
+    visualize_overlay(dataset)
     

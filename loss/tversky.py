@@ -4,13 +4,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class TverskyLoss(nn.Module):
-    def __init__(self, weight=None, size_average=True):
+    def __init__(self):
         super(TverskyLoss, self).__init__()
 
     def forward(self, inputs, targets, smooth=1, alpha=0.7, beta=0.3):
         
         #comment out if your model contains a sigmoid or equivalent activation layer
-        inputs = F.sigmoid(inputs)       
+        inputs = torch.sigmoid(inputs)       
         
         #flatten label and prediction tensors
         inputs = inputs.view(-1)
@@ -27,13 +27,13 @@ class TverskyLoss(nn.Module):
     
     
 class FocalTverskyLoss(nn.Module):
-    def __init__(self, weight=None, size_average=True):
+    def __init__(self):
         super(FocalTverskyLoss, self).__init__()
 
     def forward(self, inputs, targets, smooth=1, alpha=0.7, beta=0.3, gamma=4/3):
         
         #comment out if your model contains a sigmoid or equivalent activation layer
-        inputs = F.sigmoid(inputs)       
+        inputs = torch.sigmoid(inputs)       
         
         #flatten label and prediction tensors
         inputs = inputs.view(-1)

@@ -44,18 +44,15 @@ def get_model(args):
     return model
 
 def get_dataloaders(data_dir, batch_size):
-    transform = SegmentationTransform(resize=(128,128))
     
     train_dataset = SegmentationDataset(
         image_dir=os.path.join(data_dir, "train/images"),
-        mask_dir=os.path.join(data_dir, "train/masks"),
-        transform=transform
+        mask_dir=os.path.join(data_dir, "train/masks")
         )
     
     val_dataset = SegmentationDataset(
         image_dir=os.path.join(data_dir, "val/images"),
-        mask_dir=os.path.join(data_dir, "val/masks"),
-        transform=transform
+        mask_dir=os.path.join(data_dir, "val/masks")
         )
     
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -152,9 +149,9 @@ class Trainer():
         self.model.train()
         inputs, targets = batch
         inputs, targets = inputs.to(self.device), targets.to(self.device)
-        
+    
         # Forward pass
-        outputs = self.model(inputs)
+        outputs = self.model(inputs)        
         loss = self.loss_function(outputs, targets)
         
         # Backward pass
@@ -281,7 +278,7 @@ def main():
     logging.basicConfig(filename=args.log_file, level=logging.INFO)
     
     train_loader, val_loader = get_dataloaders(args.data_dir, args.batch_size)
-    model = UNet(output_size=(128,128))
+    model = UNet()
     loss_function = TverskyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)

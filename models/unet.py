@@ -110,7 +110,7 @@ class Decoder(nn.Module):
     
 
 class UNet(nn.Module):
-    def __init__(self, encoder_channels=(3,64,128,256,512), decoder_channels=(512,256,128,64), class_number=1, retain_dimension=True, output_size=(256,256), dropout=False, dropout_prob=0.5):
+    def __init__(self, encoder_channels=(3,64,128,256,512), decoder_channels=(512,256,128,64), class_number=1, dropout=False, dropout_prob=0.5):
         super(UNet, self).__init__()
         # Initialize encoder and decoder
         self.encoder = Encoder(encoder_channels, dropout=dropout, dropout_prob=dropout_prob)
@@ -118,9 +118,7 @@ class UNet(nn.Module):
         
         # Initialize regression head and store the class variables
         self.head = nn.Conv2d(decoder_channels[-1], class_number, kernel_size=1)
-        self.retain_dimension = retain_dimension
-        self.output_size = output_size
-        
+
     def forward(self, x):
         # Features from encoder
         encoder_features = self.encoder(x)
@@ -130,10 +128,6 @@ class UNet(nn.Module):
         
         # Pass features through head
         map = self.head(decoder_features)
-        
-        # Check if resizing is needed+
-        if self.retain_dimension:
-            map = F.interpolate(map, size=self.output_size)
             
         return map
     
