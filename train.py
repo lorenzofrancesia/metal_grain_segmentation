@@ -1,14 +1,17 @@
 import argparse
 import logging 
-import torch
-import tqdm
-import matplotlib.pyplot as plt
+import os
+from tqdm import tqdm
+import numpy as np
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader # Unless I write my own data loader
 from torch import optim
 
 from utils.metrics import BinaryMetrics
+from data.dataset import SegmentationDataset, SegmentationTransform
+from loss.tversky import TverskyLoss
 
 #Models
 from models.unet import UNet
@@ -40,6 +43,27 @@ def get_model(args):
         
     return model
 
+def get_dataloaders(data_dir, batch_size):
+    transform = SegmentationTransform(resize=(128,128))
+    
+    train_dataset = SegmentationDataset(
+        image_dir=os.path.join(data_dir, "train/images"),
+        mask_dir=os.path.join(data_dir, "train/masks"),
+        transform=transform
+        )
+    
+    val_dataset = SegmentationDataset(
+        image_dir=os.path.join(data_dir, "val/images"),
+        mask_dir=os.path.join(data_dir, "val/masks"),
+        transform=transform
+        )
+    
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    
+    return train_dataloader, val_dataloader
+
+
 
 class Trainer():
     
@@ -48,10 +72,10 @@ class Trainer():
                  train_loader,
                  val_loader=None,
                  test_loader=None,
-                 optimizer=optim.Adam(), 
-                 loss_function=nn.CrossEntropyLoss(),
+                 optimizer=optim.Adam, 
+                 loss_function=nn.BCEWithLogitsLoss(),
                  metrics=BinaryMetrics(),
-                 device='cuda' if torch.cuda.is_availablee() else 'cpu',
+                 device='cuda' if torch.cuda.is_available() else 'cpu',
                  lr_scheduler=None,
                  epochs=10,
                  checkpoint_dir=None,
@@ -90,14 +114,16 @@ class Trainer():
         
     def _initialize_training(self):
         self.model.to(self.device)
-        self.optimizer = self.optimizer(self.model.parameters())
+        
+        if self.checkpoint_dir and not os.path.exists(self.checkpoint_dir):
+            os.makedirs(self.checkpoint_dir)
         
         if self.resume_from_checkpoint:
             self._load_checkpoint()
         
-        if self.verbose:
-            print(self.model)
-            print(self.optimizer)
+        #if self.verbose:
+        #    print(self.model)
+        #    print(self.optimizer)
 
     def _save_checkpoint(self, checkpoint_path):
         checkpoint = {
@@ -149,12 +175,17 @@ class Trainer():
                 inputs, targets = batch
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
                 
+                #print(f"Inputs shape:{inputs.shape}, targets shape: {targets.shape}")
+                
                 outputs = self.model(inputs)
+                
+                #print(f"Outputs shape:{outputs.shape}, targets shape: {targets.shape}")
+                
                 loss = self.loss_function(outputs, targets)
                 val_loss += loss.item()
                 
-                all_outputs.append(outputs)
-                all_outputs.append(targets)
+                all_outputs.append(outputs.detach())
+                all_targets.append(targets.detach())
         
         # Aggregate predicitions and targets
         all_outputs = torch.cat(all_outputs, dim=0)
@@ -204,13 +235,14 @@ class Trainer():
                     break
                         
             # Save checkpoint
-            if self.checkpoint_dir:
+            if self.checkpoint_dir and self.epochs%5==0:
                 checkpoint_path = f"{self.checkpoint_dir}/epoch_{epoch+1}.pth"
                 self._save_checkpoint(checkpoint_path)
                     
             # Update lr with scheduler
             if self.lr_scheduler:
                 self.lr_scheduler.step()
+
                 
     def test(self):
         self.model.eval()
@@ -241,3 +273,31 @@ class Trainer():
         if self.verbose:
             print(f"Test Results: {results}")
         return results        
+    
+    
+def main():
+    
+    args = get_args()
+    logging.basicConfig(filename=args.log_file, level=logging.INFO)
+    
+    train_loader, val_loader = get_dataloaders(args.data_dir, args.batch_size)
+    model = UNet(output_size=(128,128))
+    loss_function = TverskyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=args.lr)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+    
+    trainer = Trainer(model=model,
+                      train_loader=train_loader,
+                      val_loader=val_loader,
+                      optimizer=optimizer,
+                      loss_function=loss_function,
+                      metrics=BinaryMetrics(),
+                      lr_scheduler=scheduler,
+                      epochs=10,
+                      checkpoint_dir=args.output_dir,
+                      )
+    
+    trainer.train()
+    
+if __name__ == "__main__":
+    main()

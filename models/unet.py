@@ -96,8 +96,8 @@ class Decoder(nn.Module):
         for i in range(len(self.channels)-1):
             x = self.up_convs[i](x)
             
-            encoder_features = self.crop(encoder_features[i], x)
-            x = torch.cat([x, encoder_features], dim=1)
+            encoder_feature = self.crop(encoder_features[i], x)
+            x = torch.cat([x, encoder_feature], dim=1)
             x = self.decoder_blocks[i](x)
             
         return x
