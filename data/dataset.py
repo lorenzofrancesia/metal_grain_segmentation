@@ -18,7 +18,7 @@ class SegmentationDataset(Dataset):
         mask_transform (callable, optional): A function/transform to apply to the masks. Default is transforms.ToTensor().
         normalize (bool, optional): Whether to normalize the images. Default is False.
     """
-    def __init__(self, image_dir, mask_dir, image_transform=transforms.ToTensor(), mask_transform=transforms.ToTensor(), normalize=False):
+    def __init__(self, image_dir, mask_dir, image_transform=transforms.ToTensor(), mask_transform=transforms.ToTensor(), normalize=False, verbose=False):
         
         self.image_dir = image_dir
         self.mask_dir = mask_dir
@@ -31,7 +31,9 @@ class SegmentationDataset(Dataset):
         self.normalize = normalize
         
         self._validate_dataset()
-        self._dataset_statistics()
+        
+        if verbose:
+            self._dataset_statistics()
         
         if self.normalize:
             self.calculate_normalization()
@@ -59,6 +61,24 @@ class SegmentationDataset(Dataset):
     def _validate_dataset(self):
         if len(self.image_paths) != len(self.mask_paths):
             raise ValueError("The number of images and masks do not match.")
+        
+        for idx in range(len(self)):
+            _, mask = self[idx]
+            if not self._is_binary(mask):
+                raise ValueError(f"Mask at index {idx} is not binary.")
+            
+    def _is_binary(self, mask):
+        """
+        Check if a mask is binary.
+
+        Args:
+            mask (torch.Tensor): The input mask.
+
+        Returns:
+            bool: True if the mask is binary, False otherwise.
+        """
+        unique_values = torch.unique(mask)
+        return torch.all((unique_values == 0) | (unique_values == 1))
 
     def _convert_binary(self, mask):
         
@@ -69,8 +89,7 @@ class SegmentationDataset(Dataset):
             binary_mask = (mask_tensor > 0.5).float()
         
         return binary_mask
-        
-        
+              
     def _dataset_statistics(self):
         image_sizes = []
         for img_path in self.image_paths:
@@ -227,6 +246,32 @@ def visualize_overlay(dataset, idx=None, alpha=0.5):
     plt.show()
 
 
+def image_histogram(image):
+    """
+    Calculate and plot the histogram of pixel values in an image.
+
+    Args:
+        image (np.ndarray or torch.Tensor): The input image.
+
+    Returns:
+        None
+    """
+    if isinstance(image, torch.Tensor):
+        image = image.permute(1, 2, 0).numpy()
+    if image.dtype != np.uint8:
+        image = (image * 255).astype(np.uint8)
+    
+    # Flatten the image to get the pixel values
+    pixel_values = image.flatten()
+    
+    # Plot the histogram
+    plt.figure(figsize=(10, 5))
+    plt.hist(pixel_values, bins=256, range=(0, 256), color='blue', alpha=0.7)
+    plt.xlabel('Pixel Value')
+    plt.ylabel('Frequency')
+    plt.title('Histogram of Pixel Values')
+    plt.show()
+    
 
 
 
@@ -260,6 +305,11 @@ if __name__ == '__main__':
     # plt.tight_layout()
     # plt.show()
 
-    class_distribution(dataset)
-    visualize_overlay(dataset)
+    # class_distribution(dataset)
+    # visualize_overlay(dataset)
     
+    # randint = np.random.randint(0,len(dataset)-1)
+    # _, mask = dataset[randint] 
+    
+    # print(randint)
+    # image_histogram(mask)

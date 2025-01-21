@@ -1,13 +1,19 @@
-import numpy as np
 import torch
-import torch.nn as nn
 
 
 class BinaryMetrics():
-    
+    """
+    A class to calculate various binary classification metrics.
+
+    Args:
+        eps (float, optional): A small value to avoid division by zero. Default is 1e-5.
+
+    Attributes:
+        eps (float): A small value to avoid division by zero.
+        metrics (dict): A dictionary to store the calculated metrics.
+    """
     def __init__(self, eps=1e-5):
         self.eps = eps
-        
         self.metrics = {
             "Precision": 0,
             "Recall": 0,
@@ -18,7 +24,7 @@ class BinaryMetrics():
         }
         
     def calculate_metrics(self, groundtruth_list, prediction_list):
-        assert len(groundtruth_list) == len(prediction_list), "The number of groundtruths and predicitions does not match."
+        assert len(groundtruth_list) == len(prediction_list), "The number of groundtruths and predictions does not match."
         
         self.metrics = {
             "Precision": 0,
@@ -38,6 +44,8 @@ class BinaryMetrics():
             fp = torch.sum(prediction * (1 - groundtruth)) # False Positives
             fn = torch.sum((1 - prediction) * groundtruth) # False Negatives
             tn = torch.sum((1 - prediction) * (1 - groundtruth)) # True Negatives
+            
+            # print(f"tp: {tp}\n fp: {fp}\n fn: {fn}\n tn: {tn}")
             
             precision = (tp + self.eps) / (tp + fp + self.eps)
             recall = (tp + self.eps) / (tp + fn + self.eps)
