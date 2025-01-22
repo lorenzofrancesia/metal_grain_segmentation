@@ -4,6 +4,8 @@ import torch.nn.functional as F
 import torchvision.transforms as transforms
 from torchinfo import summary
 
+from models.initialization import weights_init_kaiming
+
 # Maybe add pooling between each ConvBlock
 class ConvBlock(nn.Module):
     """
@@ -34,6 +36,8 @@ class ConvBlock(nn.Module):
         layers.append(nn.ReLU(inplace=True))
         
         self.block = nn.Sequential(*layers)
+        
+        self.block.apply(weights_init_kaiming)
 
     def forward(self, x):
         return self.block(x)
@@ -58,7 +62,9 @@ class UpConvBlock(nn.Module):
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),  
         ) 
-
+        
+        self.block.apply(weights_init_kaiming)
+        
     def forward(self, x):
         return self.block(x)
 

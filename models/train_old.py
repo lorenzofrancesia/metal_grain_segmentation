@@ -2,27 +2,17 @@ from torch import optim
 
 from utils.metrics import BinaryMetrics
 from loss.tversky import TverskyLoss
+from utils.output import initialize_output_folder
 from utils.input import get_args_train, get_model
 from utils.trainer import Trainer            
     
-import torchseg
     
 def main():
     
     args = get_args_train()
     
-    aux_params=dict(
-    pooling='max',             # one of 'avg', 'max'
-    dropout=0.5,               # dropout ratio, default is None
-    classes=4,                 # define number of output labels
-    )
-    
-    model = torchseg.Unet(
-        encoder_name="resnet34",        # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
-        encoder_weights="imagenet",     # use `imagenet` pre-trained weights for encoder initialization
-        in_channels=3,  
-        aux_params=aux_params           # model input channels (1 for gray-scale images, 3 for RGB, etc.)
-        )
+    output_dir = initialize_output_folder(args.output_dir, args.resume)
+    model = get_model(args)
     
     loss_function = TverskyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
@@ -36,7 +26,7 @@ def main():
                       metrics=BinaryMetrics(),
                       lr_scheduler=scheduler,
                       epochs=args.epochs,
-                      output_dir=args.output_dir,
+                      output_dir=output_dir,
                       resume=args.resume,
                       resume_path=args.checkpoint_path,
                       normalize=args.normalize

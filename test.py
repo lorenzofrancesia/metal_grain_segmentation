@@ -3,32 +3,46 @@ import os
 
 from utils.metrics import BinaryMetrics
 from loss.tversky import TverskyLoss
-from utils.output import initialize_test_output
-from utils.input import get_args_test
-from utils.trainer import Trainer            
+from utils.input import get_args_test, get_model
+from utils.tester import Tester   
+import torchseg      
     
     
 def main():
     
     args = get_args_test()
     
-    if args.output_dir:
-        output_dir, _ = initialize_test_output(args.output_dir)
-    else:
-        output_dir, _ = initialize_test_output(os.path.split(args.model_path)[0])
-
     
-    trainer = Trainer(
-        data_dir=args.data_dir,
-        output_dir=output_dir,
-        resume_from_checkpoint=True,
-        checkpoint_path=args.model_path
+    aux_params=dict(
+    pooling='max',             # one of 'avg', 'max'
+    dropout=0.5,               # dropout ratio, default is None
+    classes=4,                 # define number of output labels
     )
     
-    trainer.test()
+    model = torchseg.Unet(
+        encoder_name="resnet34",        # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
+        encoder_weights="imagenet",     # use `imagenet` pre-trained weights for encoder initialization
+        in_channels=3,  
+        aux_params=aux_params           # model input channels (1 for gray-scale images, 3 for RGB, etc.)
+        )
+    
+    
+
+    loss_function = TverskyLoss()
+    tester = Tester(
+        model=model,
+        model_path=args.model_path,
+        data_dir=args.data_dir,
+        batch_size=args.batch_size,
+        loss_function=loss_function,
+        normalize=args.normalize
+    )
+    
+    tester.test()
+    tester.plot_results()
     
 if __name__ == "__main__":
     main()
     
     
-#python test.py --data_dir ../data --model_path ../output_1/models/best.pth --output_dir ../output
+#python test.py --model unet --data_dir ../data --model_path ../output_1/models/best.pth 

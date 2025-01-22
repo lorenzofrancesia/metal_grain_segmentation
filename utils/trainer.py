@@ -1,14 +1,16 @@
 import os
 from tqdm import tqdm
 import csv
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader # Unless I write my own data loader
 from torch import optim
 import torchvision.transforms as transforms
+from torch.utils.tensorboard import SummaryWriter
 
-from utils.metrics import BinaryMetrics
+from utils.metrics import BinaryMetrics, BinaryMetrics2
 from data.dataset import SegmentationDataset
 
 class Trainer():
@@ -20,14 +22,14 @@ class Trainer():
                  normalize=False,
                  train_transform= transforms.ToTensor(),
                  optimizer=optim.Adam, 
-                 loss_function=nn.BCEWithLogitsLoss(),
+                 loss_function=nn.BCELoss(),
                  metrics=BinaryMetrics(),
                  device='cuda' if torch.cuda.is_available() else 'cpu',
                  lr_scheduler=None,
                  epochs=10,
-                 output_dir=None,
-                 resume_from_checkpoint=False,
-                 checkpoint_path=None,
+                 output_dir="../runs",
+                 resume=False,
+                 resume_path=None,
                  early_stopping=10,
                  verbose=True
                  ):
@@ -45,6 +47,10 @@ class Trainer():
         self.batch_size = batch_size
         self.normalize = normalize
         
+        # Resume
+        self.resume = resume
+        self.resume_path = resume_path
+        
         # Training parameters 
         self.epochs = epochs
         self.current_epoch = 0
@@ -55,31 +61,59 @@ class Trainer():
         self.best_loss = float("inf")
         self.early_stopping_counter = 0
         
-        # Checkpointing
+        # Output
         self.output_dir = output_dir
-        self.models_dir = os.path.join(self.output_dir, "models")
-        self.resume_from_checkpoint = resume_from_checkpoint
-        self.checkpoint_path = checkpoint_path
+        self._initialize_output_folder()
+
+        self._initialize_csv()
+        self.writer = SummaryWriter()
         self.verbose = verbose
-        
+
         # Initialize model and optimizer
         self._initialize_training()
-        self._initialize_csv()
-    
+
     
     def _initialize_training(self):
         
         self.model.to(self.device)
 
-        if self.resume_from_checkpoint:
+        if self.resume:
             self._load_checkpoint()
+    
+
+    def _initialize_output_folder(self):
         
-        #if self.verbose:
-        #    print(self.model)
-        #    print(self.optimizer)
+        exp_dir = os.path.join(self.output_dir, "exp")
+        
+        if self.resume:
+            if "results" in os.listdir(os.path.join(self.resume_path, "../..")):
+                self.exp_dir = os.path.join(self.resume_path, "../../..")
+                return
+            else:
+                self.exp_dir = os.path.join(self.resume_path, "..", "exp")
+
+
+        if not os.path.exists(exp_dir):
+            self.exp_dir = exp_dir
+        else:
+            counter = 1
+            while True:
+                new_dir = f"{exp_dir}{counter}"
+                if not os.path.exists(new_dir):
+                    self.exp_dir = new_dir
+                    break
+                counter += 1        
+        
+        self.log_dir = os.path.join(self.exp_dir, 'logs')
+        self.models_dir = os.path.join(self.exp_dir, 'models')
+        self.results_dir = os.path.join(self.exp_dir, "results")
+        
+        for sub_dir in [self.exp_dir, self.log_dir, self.models_dir, self.results_dir]:
+            os.makedirs(sub_dir, exist_ok=True)
+
         
     def _initialize_csv(self):
-        self.results_csv = os.path.join(self.output_dir, "results", "results.csv")
+        self.results_csv = os.path.join(self.results_dir, "results.csv")
         
         if not os.path.exists(self.results_csv):
             with open(self.results_csv, mode="w+", newline="") as file:
@@ -132,9 +166,9 @@ class Trainer():
     
     def _load_checkpoint(self):
         
-        if not self.checkpoint_path:
+        if not self.resume_path:
             raise ValueError("Provide path to the checkpoint")
-        checkpoint = torch.load(self.checkpoint_path)
+        checkpoint = torch.load(self.resume_path)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.current_epoch = checkpoint['current_epoch']
@@ -143,15 +177,54 @@ class Trainer():
             self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         self.output_dir = checkpoint['output_dir']
         if self.verbose:
-            print(f'Loaded checkpoint from {self.checkpoint_path}')
+            print(f'Loaded checkpoint from {self.resume_path}')
+    
+    def loss_plots(self):
+        with open(self.results_csv, mode="r", newline="") as file:
+            lines = file.readlines()
+        
+        train_loss = []
+        val_loss = []
+        for line in lines[1:]:  # Skip the header line
+            values = line.strip().split(",")
+            train_loss.append(float(values[1]))
+            val_loss.append(float(values[2]))
+    
+        # Train_loss
+        n = len(train_loss) 
+        k = 25
+        train_avg = []
+        for i in range(k, n-k):
+            train_avg.append(sum(train_loss[(i-k):(i+k+1)])/(2*k+1))
             
+        fig_train = plt.figure(figsize=(8,6))
+        plt.plot(range(n), train_loss, alpha=0.5)
+        plt.plot(range(k,n-k), train_avg, 'maroon')
+        plt.xlabel("Epoch")
+        plt.ylabel("Train Loss")
+        plt.title("Train Loss")
+        plt.savefig(os.path.join(self.results_dir, "train_loss.png"))
+        
+        val_avg = []
+        for i in range(k, n-k):
+            val_avg.append(sum(val_loss[(i-k):(i+k+1)])/(2*k+1))
+            
+        fig_val = plt.figure(figsize=(8,6))
+        plt.plot(range(n), val_loss, alpha=0.5)
+        plt.plot(range(k,n-k), val_avg, 'maroon')
+        plt.xlabel("Epoch")
+        plt.ylabel("Val Loss")
+        plt.title("Val Loss")
+        plt.savefig(os.path.join(self.results_dir, "val_loss.png"))
+    
     def _train_step(self, batch):
         self.model.train()
         inputs, targets = batch
         inputs, targets = inputs.to(self.device), targets.to(self.device)
     
         # Forward pass
-        outputs = self.model(inputs) 
+        outputs = self.model(inputs)[0]
+
         outputs_probs = torch.sigmoid(outputs)       
         loss = self.loss_function(outputs_probs, targets)
         
@@ -167,22 +240,51 @@ class Trainer():
         val_loss = 0
         all_outputs = []
         all_targets = []
-                
+
         with torch.inference_mode():
-            for batch in self.val_loader:
+            for batch_idx, batch in enumerate(self.val_loader):
                 inputs, targets = batch
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
-                                
-                outputs = self.model(inputs)
+
+                outputs = self.model(inputs)[0]
                 outputs_probs = torch.sigmoid(outputs)
                 
                 targets = targets.long()
-                                
+                
                 loss = self.loss_function(outputs_probs, targets)
                 val_loss += loss.item()
                 
                 outputs_binary = (outputs_probs > 0.5).long()
                 
+                
+                debugging = False 
+                if debugging:
+                    print("----------Inputs & Targets-------------")
+                    print(f"\n Batch {batch_idx}")
+                    print("inputs shape:", inputs.shape)
+                    print("Targets shape:", targets.shape)
+                    print("targets unique values:", torch.unique(targets))
+                    print("Targets dtype:" ,targets.dtype)
+                    print("Targets long shape:", targets.shape)
+                    print("targets long unique values:", torch.unique(targets))
+                    print("Targets long dtype:", targets.dtype)
+                    
+                    print("----------Outputs (Logits)-------------")               
+                    print("outputs shape:", outputs.shape)
+                    print("outputs unique values:", torch.unique(outputs))
+                    print("outputs dtype:", outputs.dtype)
+                    
+                    print("----------Outputs (Probabilities)-------------")
+                    print("probs shape:", outputs_probs.shape)
+                    print("prnbs unique values:", torch.unique(outputs_probs))
+                    print("probs dtype:", outputs_probs.dtype)
+                                   
+                    print("----------Outputs (Binary)-------------")
+                    print("binary shape:", outputs_binary.shape)
+                    print("binary unique values:", torch.unique(outputs_binary))
+                    print("binary dtype:", outputs_binary.dtype)
+
+
                 all_outputs.append(outputs_binary.detach())
                 all_targets.append(targets.detach())
         
@@ -190,15 +292,15 @@ class Trainer():
         all_outputs = torch.cat(all_outputs, dim=0)
         all_targets = torch.cat(all_targets, dim=0)
         
-        # # Flatten the tensors
-        # all_outputs_flat = all_outputs.view(-1)
-        # all_targets_flat = all_targets.view(-1)
-        
-        # # Check if all values are between 0 and 1
-        # if not torch.all((all_outputs_flat >= 0) & (all_outputs_flat <= 1)):
-        #     raise ValueError("All output values should be between 0 and 1.")
-        # if not torch.all((all_targets_flat >= 0) & (all_targets_flat <= 1)):
-        #     raise ValueError("All target values should be between 0 and 1.")
+        if debugging:
+            all_outputs_flat = all_outputs.view(-1)
+            all_targets_flat = all_targets.view(-1)
+            
+            # Check if all values are between 0 and 1
+            if not torch.all((all_outputs_flat >= 0) & (all_outputs_flat <= 1)):
+                raise ValueError("All output values should be between 0 and 1.")
+            if not torch.all((all_targets_flat >= 0) & (all_targets_flat <= 1)):
+                raise ValueError("All target values should be between 0 and 1.")
                
         metrics_results = self.metrics.calculate_metrics(all_outputs, all_targets)
         val_loss /= len(self.val_loader)
@@ -222,11 +324,17 @@ class Trainer():
                 
             train_loss /= len(self.train_loader)
             
+            self.writer.add_scalar("Train Loss", train_loss, epoch)
+            
             # Validation if val_dataloader exists
             val_loss = 0
             if self.val_loader:
                 val_results = self._validate()
                 val_loss = val_results["val_loss"]
+                
+                for name, result in val_results.items():
+                    self.writer.add_scalar(name, result, epoch)
+                
                 if self.verbose:
                     print(f'\nEpoch {epoch+1}/{self.epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f} - P: {val_results["Precision"]:.4f} - R: {val_results["Recall"]:.4f} - Acc: {val_results["Accuracy"]:.4f} - F1: {val_results["F1"]:.4f} - IoU: {val_results["IoU"]:.4f} - Dice: {val_results["Dice"]:.4f}')
                 self._log_results_to_csv(epoch+1, train_loss, val_results)
@@ -234,6 +342,8 @@ class Trainer():
                 val_loss = train_loss
                 if self.verbose:
                     print(f'\nEpoch {epoch+1}/{self.epochs} - Training Loss: {train_loss:.4f}')
+            
+
             
             # Early stopping
             if val_loss < self.best_loss:
@@ -255,6 +365,12 @@ class Trainer():
         if self.best_loss != val_loss: 
             last_path = f"{self.models_dir}/last.pth"
             self._save_checkpoint(last_path)
+        
+        self.writer.flush() 
+        self.writer.close()   
+        self.loss_plots()
+            
+    
             
                 
     

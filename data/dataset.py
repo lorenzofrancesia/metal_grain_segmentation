@@ -2,6 +2,7 @@ import os
 from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
+import cv2
 
 import torch
 from torch.utils.data import Dataset
@@ -24,8 +25,8 @@ class SegmentationDataset(Dataset):
         self.mask_dir = mask_dir
         self.image_paths = sorted(os.listdir(image_dir))
         self.mask_paths = sorted(os.listdir(mask_dir))
-        self.image_transform = image_transform
-        self.mask_transform = mask_transform
+        self.image_transform = transforms.Compose([transforms.Resize(416), transforms.ToTensor()])#image_transform
+        self.mask_transform = transforms.Compose([transforms.Resize(416), transforms.ToTensor()])#mask_transform
         self.mean = None
         self.std = None
         self.normalize = normalize
@@ -50,12 +51,15 @@ class SegmentationDataset(Dataset):
         
         image = self.image_transform(image)
         mask = self.mask_transform(mask)
+        
         mask = self._convert_binary(mask)
             
         if self.normalize and self.mean is not None and self.std is not None:
             normalize_transform = transforms.Normalize(mean=self.mean, std=self.std)
             image = normalize_transform(image)
-            
+        
+        mask = 1 - mask
+         
         return image, mask
     
     def _validate_dataset(self):
@@ -273,7 +277,30 @@ def image_histogram(image):
     plt.show()
     
 
-
+def inspect(dataset):
+    
+    for i in range(5):
+        image, mask = dataset[i]
+        
+        print("Image shape:", image.shape)
+        print("mask shape:", mask.shape)
+        print("Image Min/Max:", image.min(), image.max())
+        print("Mask unique values:", torch.unique(mask))
+        
+        image = image.permute(1,2,0).numpy() if isinstance(image, torch.Tensor) else image
+        mask = mask.squeeze().numpy() if isinstance(mask, torch.Tensor) else mask
+    
+    
+def masked_image(image, mask):
+    image = image.permute(1, 2, 0).numpy()
+    image = (127.5 * (image+1)).astype(np.uint8) 
+    
+    mask = mask.squeeze().numpy()
+    mask = np.expand_dims(mask, axis=1)
+    
+    masked_image = (image * mask).astype(np.uint8)
+    
+    return cv2.cvtColor(masked_image, cv2.COLOR_BGR2RGB)
 
 
 
@@ -305,6 +332,7 @@ if __name__ == '__main__':
     # plt.tight_layout()
     # plt.show()
 
+    # visualize_dataset(dataset)
     # class_distribution(dataset)
     # visualize_overlay(dataset)
     
@@ -313,3 +341,5 @@ if __name__ == '__main__':
     
     # print(randint)
     # image_histogram(mask)
+    
+    inspect(dataset)
