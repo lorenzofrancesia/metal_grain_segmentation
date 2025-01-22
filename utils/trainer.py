@@ -66,7 +66,7 @@ class Trainer():
         self._initialize_output_folder()
 
         self._initialize_csv()
-        self.writer = SummaryWriter()
+        self.writer = SummaryWriter(log_dir=self.exp_dir)
         self.verbose = verbose
 
         # Initialize model and optimizer
@@ -121,11 +121,11 @@ class Trainer():
                 headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate", "Precision", "Recall", "F1", "Accuracy", "Dice", "IoU"]
                 writer.writerow(headers)       
                       
-    def _log_results_to_csv(self, epoch, train_loss, metrics):
+    def _log_results_to_csv(self, epoch, train_loss, val_loss, metrics):
         if self.results_csv:
             with open(self.results_csv, mode="a", newline="") as file:
                 writer = csv.writer(file)
-                row = [epoch, train_loss, metrics["val_loss"], self.optimizer.param_groups[0]['lr']]
+                row = [epoch, train_loss, val_loss, self.optimizer.param_groups[0]['lr']]
                 row += [metrics.get(metric, 0) for metric in self.metrics.metrics.keys()]
                 writer.writerow(row)
     
@@ -305,7 +305,7 @@ class Trainer():
         metrics_results = self.metrics.calculate_metrics(all_outputs, all_targets)
         val_loss /= len(self.val_loader)
         
-        return {'val_loss': val_loss, **metrics_results}
+        return val_loss, { **metrics_results}
     
     def train(self):
         # Initialize dataloaders 
@@ -324,20 +324,20 @@ class Trainer():
                 
             train_loss /= len(self.train_loader)
             
-            self.writer.add_scalar("Train Loss", train_loss, epoch)
+            self.writer.add_scalar("Loss/train", train_loss, epoch)
             
             # Validation if val_dataloader exists
             val_loss = 0
             if self.val_loader:
-                val_results = self._validate()
-                val_loss = val_results["val_loss"]
+                val_loss, metrics = self._validate()
                 
-                for name, result in val_results.items():
-                    self.writer.add_scalar(name, result, epoch)
-                
+                self.writer.add_scalar("Loss/val", val_loss, epoch)
+                for name, result in metrics.items():
+                    self.writer.add_scalar(f"Metrics/{name}", result, epoch)
+
                 if self.verbose:
-                    print(f'\nEpoch {epoch+1}/{self.epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f} - P: {val_results["Precision"]:.4f} - R: {val_results["Recall"]:.4f} - Acc: {val_results["Accuracy"]:.4f} - F1: {val_results["F1"]:.4f} - IoU: {val_results["IoU"]:.4f} - Dice: {val_results["Dice"]:.4f}')
-                self._log_results_to_csv(epoch+1, train_loss, val_results)
+                    print(f'\nEpoch {epoch+1}/{self.epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f} - P: {metrics["Precision"]:.4f} - R: {metrics["Recall"]:.4f} - Acc: {metrics["Accuracy"]:.4f} - F1: {metrics["F1"]:.4f} - IoU: {metrics["IoU"]:.4f} - Dice: {metrics["Dice"]:.4f}')
+                self._log_results_to_csv(epoch+1, train_loss, val_loss, metrics)
             else:
                 val_loss = train_loss
                 if self.verbose:
