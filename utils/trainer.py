@@ -10,7 +10,7 @@ from torch import optim
 import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
 
-from utils.metrics import BinaryMetrics, BinaryMetrics2
+from utils.metrics import BinaryMetrics
 from data.dataset import SegmentationDataset
 
 class Trainer():
@@ -64,7 +64,7 @@ class Trainer():
         # Output
         self.output_dir = output_dir
         self._initialize_output_folder()
-
+        
         self._initialize_csv()
         self.writer = SummaryWriter(log_dir=self.exp_dir)
         self.verbose = verbose
@@ -88,6 +88,9 @@ class Trainer():
         if self.resume:
             if "results" in os.listdir(os.path.join(self.resume_path, "../..")):
                 self.exp_dir = os.path.join(self.resume_path, "../../..")
+                self.log_dir = os.path.join(self.exp_dir, 'logs')
+                self.models_dir = os.path.join(self.exp_dir, 'models')
+                self.results_dir = os.path.join(self.exp_dir, "results")
                 return
             else:
                 self.exp_dir = os.path.join(self.resume_path, "..", "exp")
@@ -115,11 +118,12 @@ class Trainer():
     def _initialize_csv(self):
         self.results_csv = os.path.join(self.results_dir, "results.csv")
         
-        if not os.path.exists(self.results_csv):
-            with open(self.results_csv, mode="w+", newline="") as file:
-                writer = csv.writer(file)
-                headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate", "Precision", "Recall", "F1", "Accuracy", "Dice", "IoU"]
-                writer.writerow(headers)       
+        if not self.resume:
+            if not os.path.exists(self.results_csv):
+                with open(self.results_csv, mode="w+", newline="") as file:
+                    writer = csv.writer(file)
+                    headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate", "Precision", "Recall", "F1", "Accuracy", "Dice", "IoU"]
+                    writer.writerow(headers)       
                       
     def _log_results_to_csv(self, epoch, train_loss, val_loss, metrics):
         if self.results_csv:
@@ -361,6 +365,8 @@ class Trainer():
             # Update lr with scheduler
             if self.lr_scheduler:
                 self.lr_scheduler.step()
+                
+            self.image_evolution()
         
         if self.best_loss != val_loss: 
             last_path = f"{self.models_dir}/last.pth"
@@ -369,6 +375,43 @@ class Trainer():
         self.writer.flush() 
         self.writer.close()   
         self.loss_plots()
+        
+    def image_evolution(self):
+        
+        if not os.path.exists(os.path.join(self.results_dir, "image_evolution")):
+            os.makedirs(os.path.join(self.results_dir, "image_evolution"))
+           
+        image, mask = self.val_dataset[0]
+        image = image.to(self.device)
+        self.model.eval()
+        
+        with torch.no_grad():
+            out = self.model(image.unsqueeze(0))[0]
+        
+        # Convert the output tensor to a numpy array
+        out_np = out.cpu().detach().numpy().squeeze().squeeze()
+        mask = mask.cpu().detach().numpy().squeeze() 
+        
+        plt.figure(figsize=(14, 7))
+    
+        # Plot the original image
+        plt.subplot(1, 2, 1)
+        plt.imshow(out_np, cmap='gray' if out_np.ndim == 2 else None)
+        plt.title('Prediction')
+        plt.axis('off')
+        
+        # Plot the output image
+        plt.subplot(1, 2, 2)
+        plt.imshow(mask, cmap='gray' if mask.ndim == 2 else None)
+        plt.title('Mask')
+        plt.axis('off')
+        
+        # Save the image with a proper filename
+        plt.savefig(os.path.join(self.results_dir, "image_evolution", f"{self.current_epoch}.png"))
+        plt.close()
+            
+        
+        
             
     
             

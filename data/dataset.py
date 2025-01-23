@@ -25,8 +25,8 @@ class SegmentationDataset(Dataset):
         self.mask_dir = mask_dir
         self.image_paths = sorted(os.listdir(image_dir))
         self.mask_paths = sorted(os.listdir(mask_dir))
-        self.image_transform = transforms.Compose([transforms.Resize(416), transforms.ToTensor()])#image_transform
-        self.mask_transform = transforms.Compose([transforms.Resize(416), transforms.ToTensor()])#mask_transform
+        self.image_transform = transforms.Compose([transforms.Resize(512), transforms.ToTensor()])#image_transform
+        self.mask_transform = transforms.Compose([transforms.Resize(512), transforms.ToTensor()])#mask_transform
         self.mean = None
         self.std = None
         self.normalize = normalize
@@ -313,33 +313,34 @@ if __name__ == '__main__':
     
     # dataset_norm = SegmentationDataset(image_dir=image_dir, mask_dir=mask_dir, normalize=True)
     dataset = SegmentationDataset(image_dir=image_dir, mask_dir=mask_dir)
+    dataset_norm = SegmentationDataset(image_dir=image_dir, mask_dir=mask_dir, normalize=True)
     
-    # img, _ = dataset[1]
-    # img_norm, _ = dataset_norm[1]
+    img, _ = dataset[1]
+    img_norm, _ = dataset_norm[1]
     
-    # img = image_for_plot(img)
-    # img_norm = image_for_plot(img_norm)
+    img = image_for_plot(img)
+    img_norm = image_for_plot(img_norm)
     
-    # # Plot the images side by side
-    # fig, axes = plt.subplots(1, 2, figsize=(10, 5))
-    # axes[0].imshow(img)
-    # axes[0].set_title("Original Image")
-    # axes[0].axis("off")
-    # axes[1].imshow(img_norm)
-    # axes[1].set_title("Normalized Image")
-    # axes[1].axis("off")
+    # Plot the images side by side
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+    axes[0].imshow(img)
+    axes[0].set_title("Original Image")
+    axes[0].axis("off")
+    axes[1].imshow(img_norm)
+    axes[1].set_title("Normalized Image")
+    axes[1].axis("off")
 
-    # plt.tight_layout()
-    # plt.show()
+    plt.tight_layout()
+    plt.show()
 
-    # visualize_dataset(dataset)
-    # class_distribution(dataset)
-    # visualize_overlay(dataset)
+    visualize_dataset(dataset)
+    class_distribution(dataset)
+    visualize_overlay(dataset)
     
-    # randint = np.random.randint(0,len(dataset)-1)
-    # _, mask = dataset[randint] 
+    randint = np.random.randint(0,len(dataset)-1)
+    _, mask = dataset[randint] 
     
-    # print(randint)
-    # image_histogram(mask)
+    print(randint)
+    image_histogram(mask)
     
-    inspect(dataset)
+    # inspect(dataset)

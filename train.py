@@ -6,7 +6,7 @@ from utils.input import get_args_train, get_model
 from utils.trainer import Trainer            
     
 import torchseg
-    
+ 
 def main():
     
     args = get_args_train()
@@ -14,10 +14,10 @@ def main():
     aux_params=dict(
     pooling='max',             # one of 'avg', 'max'
     dropout=0.5,               # dropout ratio, default is None
-    classes=4,                 # define number of output labels
+    classes=1,                 # define number of output labels
     )
     
-    model = torchseg.Unet(
+    model = torchseg.UnetPlusPlus(
         encoder_name="resnet34",        # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
         encoder_weights="imagenet",     # use `imagenet` pre-trained weights for encoder initialization
         in_channels=3,  
