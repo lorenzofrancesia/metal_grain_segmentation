@@ -1,78 +1,69 @@
-from kivymd.app import MDApp
-from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.textfield import MDTextField
-from kivymd.uix.label import MDLabel
-from kivymd.uix.menu import MDDropdownMenu
-from kivymd.uix.button import MDFillRoundFlatIconButton
-from kivymd.uix.selectioncontrol import MDSwitch
-from kivy.core.window import Window
+import tkinter as tk
+import customtkinter as ctk
+from tkinter import filedialog
 
-Window.size = (1200, 800)
+def browse_file(entry):
+    file_path = filedialog.askdirectory()
+    if file_path:
+        entry.delete(0, tk.END)
+        entry.insert(0, file_path)
 
-class MainApp(MDApp):
-    def build(self):
-        self.theme_cls.theme_style = "Light"  # "Dark"
-        self.theme_cls.primary_palette = "Blue"
-        self.theme_cls.accent_palette = "Orange"
+def create_gui():
+    window = ctk.CTk()
+    window.title("Model Training GUI")
+    window.geometry("800x600")
 
-        main_layout = MDBoxLayout(orientation='horizontal', padding=10)
+    main_frame = ctk.CTkFrame(window)
+    main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Left Panel
-        left_panel = MDBoxLayout(orientation='vertical', size_hint_x=0.3, padding=10, spacing=10)
+    left_frame = ctk.CTkFrame(main_frame, width=400)  # Increased width
+    left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
 
-        input_data = [
-            ("Model", MDTextField()),
-            ("Encoder", MDTextField()),
-            ("Weights", MDTextField()),
-            ("Optimizer", self.create_dropdown(["Adam", "SGD", "RMSprop"])),
-            ("LR", MDTextField()),
-            ("Loss Func", MDTextField()),
-            ("Scheduler", MDTextField()),
-            ("Epochs", MDTextField()),
-            ("Data Dir", self.create_file_selector()),
-            ("Batch Size", MDTextField()),
-            ("Normalize", MDSwitch()),
-            ("Transform", MDSwitch()),
-            ("Out Dir", self.create_file_selector()),
-        ]
+    right_frame = ctk.CTkFrame(main_frame)
+    right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        for label_text, widget in input_data:
-            left_panel.add_widget(MDLabel(text=label_text))
-            left_panel.add_widget(widget)
+    input_data = [
+        ("Model", ctk.CTkEntry(left_frame)),
+        ("Encoder", ctk.CTkEntry(left_frame)),
+        ("Weights", ctk.CTkEntry(left_frame)),
+        ("Optimizer", ctk.CTkComboBox(left_frame, values=["Adam", "SGD", "RMSprop"])),
+        ("LR", ctk.CTkEntry(left_frame)),
+        ("Loss Func", ctk.CTkEntry(left_frame)),
+        ("Scheduler", ctk.CTkEntry(left_frame)),
+        ("Epochs", ctk.CTkEntry(left_frame)),
+    ]
 
-        main_layout.add_widget(left_panel)
+    for i, (label_text, widget) in enumerate(input_data):
+        ctk.CTkLabel(left_frame, text=label_text).grid(row=i, column=0, sticky="e", padx=5, pady=5)
+        widget.grid(row=i, column=1, sticky="w", padx=5, pady=5)
 
-        # Right Panel
-        right_panel = MDBoxLayout(orientation='vertical', size_hint_x=0.7, padding=10, spacing=10)
-        right_panel.add_widget(MDLabel(text='Plots go here', size_hint_y=0.7, halign="center", valign="middle"))
-        right_panel.add_widget(MDLabel(text='Messages go here', size_hint_y=0.3, halign="center", valign="middle"))
-        main_layout.add_widget(right_panel)
+    # Data Dir and Out Dir with Browse Buttons
+    for i, dir_label in enumerate(["Data Dir", "Out Dir"], start=len(input_data)):
+        ctk.CTkLabel(left_frame, text=dir_label).grid(row=i, column=0, sticky="e", padx=5, pady=5)
+        dir_entry = ctk.CTkEntry(left_frame)
+        dir_entry.grid(row=i, column=1, sticky="w", padx=5, pady=5)
+        browse_button = ctk.CTkButton(left_frame, text="...", width=30, command=lambda entry=dir_entry: browse_file(entry))
+        browse_button.grid(row=i, column=2, sticky="w", padx=5, pady=5)
 
-        return main_layout
+    ctk.CTkLabel(left_frame, text="Batch Size").grid(row=i+1, column=0, sticky="e", padx=5, pady=5)
+    ctk.CTkEntry(left_frame).grid(row=i+1, column=1, sticky="w", padx=5, pady=5)
+    ctk.CTkLabel(left_frame, text="Normalize").grid(row=i+2, column=0, sticky="e", padx=5, pady=5)
+    ctk.CTkSwitch(left_frame).grid(row=i+2, column=1, sticky="w", padx=5, pady=5)
+    ctk.CTkLabel(left_frame, text="Transform").grid(row=i+3, column=0, sticky="e", padx=5, pady=5)
+    ctk.CTkSwitch(left_frame).grid(row=i+3, column=1, sticky="w", padx=5, pady=5)
 
-    def create_dropdown(self, items):
-        menu_items = [
-            {"text": f"{item}", "viewclass": "OneLineListItem",
-             "on_release": lambda x=item: self.set_item(x, menu)} for item in items
-        ]
-        menu = MDDropdownMenu(
-            items=menu_items,
-            width_mult=4,
-        )
-        return menu
+    # Right Panel (Plots and Messages)
+    plots_frame = ctk.CTkFrame(right_frame)
+    plots_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
+    plots_label = ctk.CTkLabel(plots_frame, text="Plots will be displayed here")
+    plots_label.pack(expand=True)
 
-    def set_item(self, item, menu):
-        menu.caller.text = item
-        menu.dismiss()
+    messages_frame = ctk.CTkFrame(right_frame)
+    messages_frame.pack(fill=tk.BOTH, expand=True)
+    messages_label = ctk.CTkLabel(messages_frame, text="Messages will be displayed here")
+    messages_label.pack(expand=True)
 
-    def create_file_selector(self):
-        box = MDBoxLayout(orientation="horizontal")
-        text_field = MDTextField(hint_text="Select Path")
-        button = MDFillRoundFlatIconButton(icon="folder", size_hint_x=None, width=30)
-        box.add_widget(text_field)
-        box.add_widget(button)
-        return box
+    window.mainloop()
 
-
-if __name__ == '__main__':
-    MainApp().run()
+if __name__ == "__main__":
+    create_gui()
