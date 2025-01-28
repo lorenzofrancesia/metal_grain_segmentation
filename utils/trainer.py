@@ -377,44 +377,76 @@ class Trainer():
         self.loss_plots()
         
     def image_evolution(self):
-        
-        if not os.path.exists(os.path.join(self.results_dir, "image_evolution")):
-            os.makedirs(os.path.join(self.results_dir, "image_evolution"))
-           
-        image, mask = self.val_dataset[0]
-        image = image.to(self.device)
-        self.model.eval()
-        
-        with torch.no_grad():
-            out = self.model(image.unsqueeze(0))[0]
-        
-        # Convert the output tensor to a numpy array
-        out_np = out.cpu().detach().numpy().squeeze().squeeze()
-        mask = mask.cpu().detach().numpy().squeeze() 
-        
-        plt.figure(figsize=(14, 7))
-    
-        # Plot the original image
-        plt.subplot(1, 2, 1)
-        plt.imshow(out_np, cmap='gray' if out_np.ndim == 2 else None)
-        plt.title('Prediction')
-        plt.axis('off')
-        
-        # Plot the output image
-        plt.subplot(1, 2, 2)
-        plt.imshow(mask, cmap='gray' if mask.ndim == 2 else None)
-        plt.title('Mask')
-        plt.axis('off')
-        
-        # Save the image with a proper filename
-        plt.savefig(os.path.join(self.results_dir, "image_evolution", f"{self.current_epoch}.png"))
-        plt.close()
-            
-        
-        
-            
-    
+        """
+        This function visualizes the output of the model during training.
+
+        Args:
+            results_dir (str): Path to the directory for saving results.
+            current_epoch (int): Current epoch number.
+            val_dataset (torch.utils.data.Dataset): Validation dataset.
+            device (str): Device to use for computations (e.g., 'cpu' or 'cuda').
+        """
+
+        # Create directory if it doesn't exist
+        image_evolution_dir = os.path.join(self.results_dir, "image_evolution")
+        if not os.path.exists(image_evolution_dir):
+            os.makedirs(image_evolution_dir)
+
+        try:
+            # Get image and mask
+            image, mask = self.val_dataset[0]
+            image = image.to(self.device)
+
+            # Model prediction
+            self.model.eval()
+            with torch.no_grad():
+                out = self.model(image.unsqueeze(0))[0]
+
+                # Convert to numpy arrays
+                out_np = out.cpu().detach().numpy().squeeze().squeeze()
+                mask_np = mask.cpu().detach().numpy().squeeze()
+
+                # Print statistics (optional)
+                # print(f"MAX: {max(mask_np)}")
+                # print(f"MIN: {min(mask_np)}")
+
+                # Create plots
+                plt.figure(figsize=(14, 7))
+
+                # Plot options (make these configurable parameters if needed)
+                num_subplots = 3
+                binary_threshold = 0.5
+
+                # Plot prediction
+                plt.subplot(1, num_subplots, 1)
+                plt.imshow(out_np, cmap='gray' if out_np.ndim == 2 else None)
+                plt.title('Prediction')
+                plt.axis('off')
+
+                # Plot binary prediction
+                plt.subplot(1, num_subplots, 2)
+                plt.imshow((out_np > binary_threshold), cmap='gray' if out_np.ndim == 2 else None)
+                plt.title('Binary Prediction')
+                plt.axis('off')
+
+                # Plot mask
+                plt.subplot(1, num_subplots, 3)
+                plt.imshow(mask_np, cmap='gray' if mask_np.ndim == 2 else None)
+                plt.title('Mask')
+                plt.axis('off')
+
+                filename = f"{self.current_epoch}.png"
+                filepath = os.path.join(image_evolution_dir, filename)
+                plt.savefig(filepath)
+                plt.close()
+
+        except Exception as e:
+            print(f"Error during image evolution: {e}")
+                
             
                 
-    
-    
+        
+                
+                    
+        
+        

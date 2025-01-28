@@ -2,7 +2,7 @@ from torch import optim
 
 from utils.metrics import BinaryMetrics
 from loss.tversky import TverskyLoss
-from utils.input import get_args_train, get_model
+from utils.input import get_args_train, get_model, get_optimizer, get_scheduler, get_loss_function
 from utils.trainer import Trainer            
     
 import torchseg
@@ -10,23 +10,24 @@ import torchseg
 def main():
     
     args = get_args_train()
-    
+
+    try:
+        dropout = args.dropout
+        if dropout == 0:
+            dropout = None
+    except AttributeError:
+        dropout = None
     aux_params=dict(
-    pooling='max',             # one of 'avg', 'max'
-    dropout=0.5,               # dropout ratio, default is None
-    classes=1,                 # define number of output labels
-    )
-    
-    model = torchseg.UnetPlusPlus(
-        encoder_name="resnet34",        # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
-        encoder_weights="imagenet",     # use `imagenet` pre-trained weights for encoder initialization
-        in_channels=3,  
-        aux_params=aux_params           # model input channels (1 for gray-scale images, 3 for RGB, etc.)
-        )
-    
-    loss_function = TverskyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+        pooling='max',            
+        classes=1,
+        dropout=dropout
+        )       
+
+    model = get_model(args, aux_params=aux_params)
+
+    optimizer = get_optimizer(args, model=model)
+    scheduler = get_scheduler(args, optimizer=optimizer)
+    loss_function = get_loss_function(args)
     
     trainer = Trainer(model=model,
                       data_dir=args.data_dir,
@@ -37,8 +38,6 @@ def main():
                       lr_scheduler=scheduler,
                       epochs=args.epochs,
                       output_dir=args.output_dir,
-                      resume=args.resume,
-                      resume_path=args.checkpoint_path,
                       normalize=args.normalize
                       )
     

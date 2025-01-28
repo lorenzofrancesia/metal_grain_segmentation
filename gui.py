@@ -1,18 +1,116 @@
 import tkinter as tk
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, scrolledtext
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import json
+import subprocess
+import threading
+import sys
+import queue
+import os
+
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use("TkAgg")
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 
+from CTkMessagebox import CTkMessagebox
+
+class StringRedirector(object):
+    def __init__(self, text_widget):
+        self.text_widget = text_widget
+
+    def write(self, string):
+        self.text_widget.display_output(string)
+
+    def flush(self):
+        pass
+
+class TransformWidget(ctk.CTkFrame):
+    def __init__(self, master, available_transforms=None):
+        super().__init__(master)
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure(0, weight=1)
+
+        self.available_transforms = available_transforms or ["transforms.ToTensor", "transforms.Resize"]
+
+        self.label = ctk.CTkLabel(self, text="Transform")
+        self.label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
+
+        self.add_btn = ctk.CTkButton(self, text="+", width=30, command=self.add_row)
+        self.add_btn.grid(row=0, column=1, padx=5, pady=5, sticky="e")
+
+        self.table_frame = ctk.CTkFrame(self)
+        self.table_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+        self.table_frame.grid_columnconfigure(1, weight=1) # Key change here
+
+        self.rows = []
+        self.add_row(default="transforms.ToTensor")
+
+    def add_row(self, default=None):
+        row_frame = ctk.CTkFrame(self.table_frame)
+        row_frame.pack(fill="x", padx=0, pady=2) # Remove padding here
+        row_frame.grid_columnconfigure(1, weight=1)
+
+        delete_btn = ctk.CTkButton(row_frame, text="X", width=30, command=lambda: self.delete_row(row_frame))
+        delete_btn.grid(row=0, column=0, padx=(0,2)) # use grid for more precise control
+        delete_btn.grid_propagate(False) # Prevent button from affecting row size
+
+
+        dropdown = ctk.CTkOptionMenu(row_frame, values=self.available_transforms, command=lambda value: self.on_dropdown_change(value, row_frame))
+        dropdown.grid(row=0, column=1, sticky="ew") # Use grid and sticky to fill space
+        
+
+        if default:
+            dropdown.set(default)
+
+        resize_entry = ctk.CTkEntry(row_frame, placeholder_text="Enter size", width=50)
+        resize_entry.grid(row=0, column=2, padx=5)
+        resize_entry.grid_remove()  # Use grid_remove for cleaner hiding
+        resize_entry.configure(state="disabled")
+
+        self.rows.append({"frame": row_frame, "dropdown": dropdown, "resize_entry": resize_entry, "delete_btn": delete_btn})
+
+    def on_dropdown_change(self, value, row_frame):
+        for item in self.rows:
+            if item["frame"] == row_frame:
+                if value == "transforms.Resize":
+                    item["resize_entry"].grid()  # Use grid to show
+                    item["resize_entry"].configure(state="normal")
+                else:
+                    item["resize_entry"].grid_remove()  # Use grid_remove to hide
+                    item["resize_entry"].configure(state="disabled")
+                break
+
+    def delete_row(self, frame):
+        self.rows = [item for item in self.rows if item["frame"] != frame]
+        frame.destroy()
+
+    def get_sequence(self):
+        sequence = []
+        for item in self.rows:
+            transform = item["dropdown"].get()
+            if transform == "transforms.Resize" and item["resize_entry"].cget("state") == "normal":
+                size = item["resize_entry"].get()
+                sequence.append(f"{transform}({size})")
+            else:
+                sequence.append(transform)
+        return sequence
+    
 class ModeltrainingGUI:
     def __init__(self):
         self.window = ctk.CTk()
         self.window.title("Model training GUI")
-        self.window.geometry("900x650")
+        self.window.geometry("900x550")
         
-        # define textvariables
+        self._init_variables()
+        
+        self.message_queue = queue.Queue()  # Create a message queue
+        self.window.after(100, self.process_queue)  # Start queue processing
+        
+        self.create_gui()
+    
+    def _init_variables(self):
         self.model_var = tk.StringVar(value="U-Net")
         self.dropout_prob_var = tk.StringVar(value="0.5")
         
@@ -23,7 +121,7 @@ class ModeltrainingGUI:
         self.lr_var = tk.StringVar(value="0.001")
         self.momentum_var = tk.StringVar(value="0.9")
         
-        self.scheduler_var = tk.StringVar(value="LinearLR")
+        self.scheduler_var = tk.StringVar(value="None")
         self.start_factor_var = tk.StringVar(value="0.3")
         self.end_factor_var = tk.StringVar(value="1")
         self.iterations_var = tk.StringVar(value="10")
@@ -33,17 +131,20 @@ class ModeltrainingGUI:
         self.loss_func_var = tk.StringVar(value="FocalTversky")
         self.alpha_var = tk.StringVar(value="0.7")
         self.beta_var = tk.StringVar(value="0.3")
-        self.gamma_var = tk.StringVar(value="4/3")
+        self.gamma_var = tk.StringVar(value="1.3333")
         
         self.epochs_var = tk.StringVar(value="50")
         self.batch_size_var = tk.StringVar(value="32")
         self.data_dir_var = tk.StringVar()
         self.out_dir_var = tk.StringVar()
+        self.normalize_var = tk.StringVar()
+        
+        self.transform_var = tk.StringVar(value="transforms.ToTensor")
         
         #config variables
         self.config_file_var = tk.StringVar()
         
-        self.create_gui()
+        
         
     def browse_file(self, entry):
         file_path = filedialog.askdirectory()
@@ -177,12 +278,15 @@ class ModeltrainingGUI:
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to save configuration: {e}")
     
-            
-    def toggle_options(self, frame, row, update_function=None):
+    def toggle_options(self, frame, row, button, update_function=None):
+
+        
         if frame.winfo_ismapped():
             frame.grid_forget()
+            button.configure(text="\u25BC")    
         else:
             frame.grid(row=row, column=0, columnspan=3, sticky="w", padx=5, pady=5)
+            button.configure(text="\u25B2")
             if update_function:
                 update_function()
             
@@ -246,13 +350,14 @@ class ModeltrainingGUI:
     def create_gui(self):
         main_frame = ctk.CTkFrame(self.window)
         main_frame.pack(fill=tk.BOTH, expand=True)
-
-        left_frame = ctk.CTkScrollableFrame(main_frame, width=300, height=600) 
-        left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
-
-        right_frame = ctk.CTkFrame(main_frame)
-        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
         
+        
+        self.create_left_panel(main_frame)
+        self.create_right_panel(main_frame)
+    
+    def create_left_panel(self, parent):
+        left_frame = ctk.CTkScrollableFrame(parent, width=300, height=600) 
+        left_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
         
         ###############################################################################################################
         # Model selection dropdown with toggle button
@@ -268,7 +373,9 @@ class ModeltrainingGUI:
                                                         "DeepLabV3+"
                                                         ], variable=self.model_var).grid(row=0, column=1, sticky="e", padx=5, pady=5)
         self.model_options_frame = ctk.CTkFrame(left_frame)
-        ctk.CTkButton(left_frame, text="\u25BC", width=30, command=lambda: self.toggle_options(self.model_options_frame, row=1)).grid(row=0, column=2, sticky="w", padx=5, pady=5)
+        model_options_button = ctk.CTkButton(left_frame, text="\u25BC", width=30)
+        model_options_button.configure(command=lambda btn=model_options_button: self.toggle_options(self.model_options_frame, row=1, button=btn))
+        model_options_button.grid(row=0, column=2, sticky="w", padx=5, pady=5)
         
         # Widgets for model options
         ctk.CTkLabel(self.model_options_frame, text="Dropout Prob").grid(row=0, column=0, sticky="e", padx=5, pady=5)
@@ -289,7 +396,9 @@ class ModeltrainingGUI:
                                                             "vit_giant_patch14_reg4_dinov2"
                                                             ], variable=self.encoder_var).grid(row=2, column=1, sticky="e", padx=5, pady=5)
         self.encoder_options_frame = ctk.CTkFrame(left_frame)
-        ctk.CTkButton(left_frame, text="\u25BC", width=30, command=lambda: self.toggle_options(self.encoder_options_frame, row=3)).grid(row=2, column=2, sticky="w", padx=5, pady=5)
+        encoder_options_button = ctk.CTkButton(left_frame, text="\u25BC", width=30,)
+        encoder_options_button.configure( command=lambda btn=encoder_options_button: self.toggle_options(self.encoder_options_frame, row=3, button=btn))
+        encoder_options_button.grid(row=2, column=2, sticky="w", padx=5, pady=5)
         
         # Widgets for encoder options
         ctk.CTkLabel(self.encoder_options_frame, text="Pretrained Weights").grid(row=0, column=0, sticky="e", padx=5, pady=5)
@@ -302,17 +411,22 @@ class ModeltrainingGUI:
         optimizer_dropdown = ctk.CTkComboBox(left_frame, values=["Adam",
                                                                  "SGD"], variable=self.optimizer_var).grid(row=4, column=1, sticky="e", padx=5, pady=5)
         self.optimizer_options_frame = ctk.CTkFrame(left_frame)
-        ctk.CTkButton(left_frame, text="\u25BC", width=30, command=lambda: self.toggle_options(self.optimizer_options_frame, row=5, update_function=self.update_optimizer_options)).grid(row=4, column=2, sticky="w", padx=5, pady=5)
+        optimizer_options_button = ctk.CTkButton(left_frame, text="\u25BC", width=30)
+        optimizer_options_button.configure(command=lambda btn=optimizer_options_button: self.toggle_options(self.optimizer_options_frame, row=5, button=btn, update_function=self.update_optimizer_options))
+        optimizer_options_button.grid(row=4, column=2, sticky="w", padx=5, pady=5)
         self.optimizer_var.trace_add("write", self.update_optimizer_options)
         
         
         ###############################################################################################################
         # Scheduler selection and dropdown
         ctk.CTkLabel(left_frame, text="Scheduler").grid(row=6, column=0, sticky="e", padx=5, pady=5)
-        scheduler_dropdown = ctk.CTkComboBox(left_frame, values=["LinearLR",
-                                                                "CosineAnnealingLR"], variable=self.scheduler_var).grid(row=6, column=1, sticky="e", padx=5, pady=5)
+        scheduler_dropdown = ctk.CTkComboBox(left_frame, values=["None",
+                                                                 "LinearLR",
+                                                                 "CosineAnnealingLR"], variable=self.scheduler_var).grid(row=6, column=1, sticky="e", padx=5, pady=5)
         self.scheduler_options_frame = ctk.CTkFrame(left_frame)
-        ctk.CTkButton(left_frame, text="\u25BC", width=30, command=lambda: self.toggle_options(self.scheduler_options_frame, row=7, update_function=self.update_scheduler_options)).grid(row=6, column=2, sticky="w", padx=5, pady=5)
+        scheduler_options_button = ctk.CTkButton(left_frame, text="\u25BC", width=30, )
+        scheduler_options_button.configure(command=lambda btn=scheduler_options_button: self.toggle_options(self.scheduler_options_frame, row=7, button=btn, update_function=self.update_scheduler_options))
+        scheduler_options_button.grid(row=6, column=2, sticky="w", padx=5, pady=5)
         self.scheduler_var.trace_add("write", self.update_scheduler_options)
         
         ###############################################################################################################
@@ -322,7 +436,9 @@ class ModeltrainingGUI:
                                                                      "Tversky",
                                                                      "IoU"], variable=self.loss_func_var).grid(row=8, column=1, sticky="e", padx=5, pady=5)
         self.loss_function_options_frame = ctk.CTkFrame(left_frame)
-        ctk.CTkButton(left_frame, text="\u25BC", width=30, command=lambda: self.toggle_options(self.loss_function_options_frame, row=9, update_function=self.update_loss_function_options)).grid(row=8, column=2, sticky="w", padx=5, pady=5)
+        loss_function_option_button = ctk.CTkButton(left_frame, text="\u25BC", width=30, )
+        loss_function_option_button.configure(command=lambda btn=loss_function_option_button: self.toggle_options(self.loss_function_options_frame, row=9, button=btn, update_function=self.update_loss_function_options))
+        loss_function_option_button.grid(row=8, column=2, sticky="w", padx=5, pady=5)
         self.loss_func_var.trace_add("write", self.update_loss_function_options)
         
         ###############################################################################################################
@@ -335,24 +451,177 @@ class ModeltrainingGUI:
             browse_button = ctk.CTkButton(left_frame, text="...", width=30, command=lambda entry=dir_entry: self.browse_file(entry))
             browse_button.grid(row=i, column=2, sticky="w", padx=5, pady=5)
 
-        ctk.CTkLabel(left_frame, text="Normalize").grid(row=i+2, column=0, sticky="e", padx=5, pady=5)
-        ctk.CTkSwitch(left_frame, text=None).grid(row=i+2, column=1, sticky="w", padx=5, pady=5)
-        ctk.CTkLabel(left_frame, text="Transform").grid(row=i+3, column=0, sticky="e", padx=5, pady=5)
-        ctk.CTkSwitch(left_frame, text=None).grid(row=i+3, column=1, sticky="w", padx=5, pady=5)
-
-        # Right Panel (Plots and Messages)
-        plots_frame = ctk.CTkFrame(right_frame)
-        plots_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
-        plots_label = ctk.CTkLabel(plots_frame, text="Plots will be displayed here")
-        plots_label.pack(expand=True)
-
-        messages_frame = ctk.CTkFrame(right_frame)
-        messages_frame.pack(fill=tk.BOTH, expand=True)
-        messages_label = ctk.CTkLabel(messages_frame, text="Messages will be displayed here")
-        messages_label.pack(expand=True)
+        ctk.CTkLabel(left_frame, text="Epochs").grid(row=12, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkEntry(left_frame, textvariable=self.epochs_var, validatecommand=self.validate_int_input).grid(row=12, column=1, sticky="w", padx=5, pady=5)
         
+        ctk.CTkLabel(left_frame, text="Batch Size").grid(row=13, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkEntry(left_frame, textvariable=self.batch_size_var, validatecommand=self.validate_int_input).grid(row=13, column=1, sticky="w", padx=5, pady=5)
+        
+        ctk.CTkLabel(left_frame, text="Normalize").grid(row=14, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkSwitch(left_frame, text=None, textvariable=self.normalize_var, onvalue="True", offvalue="False").grid(row=14, column=1, sticky="w", padx=5, pady=5)
+        
+        available_transforms = ["transforms.ToTensor", "transforms.Resize"]
+        TransformWidget(left_frame, available_transforms=available_transforms).grid(row=15, column=0, columnspan=3, sticky="we", padx=5, pady=5)
+        
+        train_button = ctk.CTkButton(left_frame, text="Start training", command=self.start_training, height=30)
+        train_button.grid(row=16, columnspan=3, sticky="we", padx=5, pady=5)       
+
+    
+    def create_right_panel(self, parent):
+        right_frame = ctk.CTkFrame(parent)
+        right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        plot_frame = ctk.CTkFrame(right_frame)
+        plot_frame.grid(row=0, column=0, sticky="nsew")
+        right_frame.grid_rowconfigure(0, weight=50)  # 70% of the height
+        right_frame.grid_columnconfigure(0, weight=1)
+
+        plot_label = ctk.CTkLabel(plot_frame, text="Plots will be displayed here")
+        plot_label.pack(expand=True)
+
+        message_frame = ctk.CTkFrame(right_frame)
+        message_frame.grid(row=1, column=0, sticky="nsew")
+        right_frame.grid_rowconfigure(1, weight=2)
+
+        # Terminal-style Text widget
+        self.messages_box = tk.Text(
+            message_frame,
+            wrap=tk.WORD,
+            bg="black",  # Black background
+            fg="white",  # White foreground (text color)
+            font=("Courier New", 12),  # Monospace font, larger size
+            insertbackground="white", #cursor color
+            selectbackground="#333333", #selected text color
+            selectforeground="white"
+        )
+        scrollbar = tk.Scrollbar(message_frame, command=self.messages_box.yview)
+        self.messages_box.config(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.messages_box.pack(fill=tk.BOTH, expand=True)
+        self.messages_box.config(state=tk.DISABLED)
+        
+    def log_message(self, message):
+        if self.messages_box:
+            self.messages_box.config(state=tk.NORMAL)  # Enable editing temporarily
+            self.messages_box.insert(tk.END, message + "\n")
+            self.messages_box.see(tk.END)
+            self.messages_box.config(state=tk.DISABLED)  # Disable editing again
+            self.messages_box.update() #update the textbox so the output is displayed
+
     def run(self):
         self.window.mainloop()
+       
+    def process_queue(self):
+        try:
+            message = self.message_queue.get_nowait()
+            self.log_message(message)
+        except queue.Empty:
+            pass
+        self.window.after(100, self.process_queue)  # Check queue again after 100ms
+       
+        
+    def run_training_in_thread(self):
+        try:
+            # Retrieve values DIRECTLY from GUI variables
+            model = self.model_var.get()
+            dropout = float(self.dropout_prob_var.get())
+            
+            encoder = self.encoder_var.get()
+            pretrained_weights = self.pretrained_weights_var.get()
+            
+            optimizer = self.optimizer_var.get()
+            lr = float(self.lr_var.get())
+            momentum = self.momentum_var.get()
+            
+            scheduler = self.scheduler_var.get()
+            start_factor = self.start_factor_var.get()
+            end_factor = self.end_factor_var.get()
+            iterations = self.iterations_var.get()
+            t_max = self.t_max_var.get()
+            eta_min = self.eta_min_var.get()
+            
+            loss_func = self.loss_func_var.get()
+            alpha = self.alpha_var.get()
+            beta = self.beta_var.get()
+            gamma = self.gamma_var.get()
+            
+            
+            data_dir = self.data_dir_var.get()
+            batch_size = int(self.batch_size_var.get())
+            epochs = int(self.epochs_var.get())
+            output_dir = self.out_dir_var.get()
+            normalize = self.normalize_var.get()
+            
+
+            # Construct the command
+            args = ["python", "train.py"]  # Replace with your script name
+            args.extend(["--data_dir", data_dir])
+            args.extend(["--batch_size", str(batch_size)])
+            args.extend(["--epochs", str(epochs)])
+            args.extend(["--lr", str(lr)])
+            args.extend(["--model", model])
+            args.extend(["--output_dir", output_dir])
+
+            # Add other inputs from the GUI
+            args.extend(["--dropout", str(dropout)])
+            args.extend(["--encoder", encoder])
+            
+            args.extend(["--optimizer", optimizer])
+            args.extend(["--momentum", str(momentum)])
+            args.extend(["--scheduler", scheduler])
+            args.extend(["--start_factor", str(start_factor)])
+            args.extend(["--end_factor", str(end_factor)])
+            args.extend(["--iterations", str(iterations)])
+            args.extend(["--t_max", str(t_max)])
+            args.extend(["--eta_min", str(eta_min)])
+            args.extend(["--eta_min", str(eta_min)])
+            args.extend(["--loss_func", loss_func])
+            args.extend(["--alpha", str(alpha)])
+            args.extend(["--beta", str(beta)])
+            args.extend(["--gamma", str(gamma)])
+
+            if normalize:
+                args.append("--normalize")
+            
+            if pretrained_weights:
+                args.append("--weights")
+
+            self.message_queue.put(f"Starting training with arguments: {' '.join(args)}") #debug
+            self.message_queue.put("Current Working Directory: " + os.getcwd()) #debug
+
+            process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=os.getcwd()) #added cwd
+
+            while True:
+                output = process.stdout.readline()
+                if output == '' and process.poll() is not None:
+                    break
+                if output:
+                    self.message_queue.put(output.strip())
+
+            stderr = process.stderr.read()
+            if stderr:
+                self.message_queue.put(f"Standard Error:\n{stderr}") #debug
+
+            return_code = process.poll()
+            self.message_queue.put(f"Training process finished with return code: {return_code}") #debug
+            if return_code != 0:
+                self.message_queue.put("Training failed.")
+            else:
+                self.message_queue.put("Training Complete!")
+
+        except ValueError as ve:
+            self.message_queue.put(f"Input Error: {ve}")
+        except FileNotFoundError:
+            self.message_queue.put("Error: Training script 'your_training_script.py' not found. Make sure it's in the correct directory or provide the full path.")
+        except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info() #get detailed error info
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            self.message_queue.put(f"An unexpected error occurred:\n{e}\nType: {exc_type}\nFile: {fname}\nLine: {exc_tb.tb_lineno}")
+    
+    def start_training(self):
+        self.message_queue.put("Starting training...")
+        thread = threading.Thread(target=self.run_training_in_thread)
+        thread.start()
 
 
 if __name__ == "__main__":
