@@ -96,7 +96,19 @@ class TransformWidget(ctk.CTkFrame):
             else:
                 sequence.append(transform)
         return sequence
-    
+
+class PlotView(ctk.CTkTabview):
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+
+        # create tabs
+        self.add("Losses")
+        self.add("Image Evolution")
+
+        # add widgets on tabs
+        self.label = ctk.CTkLabel(master=self.tab("Image Evolution"))
+        self.label.grid(row=0, column=0, padx=20, pady=10)
+
 class ModeltrainingGUI:
     def __init__(self):
         self.window = ctk.CTk()
@@ -115,7 +127,7 @@ class ModeltrainingGUI:
         self.dropout_prob_var = tk.StringVar(value="0.5")
         
         self.encoder_var = tk.StringVar(value="efficientnet_b8")
-        self.pretrained_weights_var = tk.StringVar(value="False")
+        self.pretrained_weights_var = tk.BooleanVar(value=False)
         
         self.optimizer_var = tk.StringVar(value="Adam")
         self.lr_var = tk.StringVar(value="0.001")
@@ -137,7 +149,7 @@ class ModeltrainingGUI:
         self.batch_size_var = tk.StringVar(value="32")
         self.data_dir_var = tk.StringVar()
         self.out_dir_var = tk.StringVar()
-        self.normalize_var = tk.StringVar()
+        self.normalize_var = tk.BooleanVar(value=False)
         
         self.transform_var = tk.StringVar(value="transforms.ToTensor")
         
@@ -280,12 +292,11 @@ class ModeltrainingGUI:
     
     def toggle_options(self, frame, row, button, update_function=None):
 
-        
         if frame.winfo_ismapped():
             frame.grid_forget()
             button.configure(text="\u25BC")    
         else:
-            frame.grid(row=row, column=0, columnspan=3, sticky="w", padx=5, pady=5)
+            frame.grid(row=row, column=0, columnspan=3, sticky="we", padx=5, pady=5)
             button.configure(text="\u25B2")
             if update_function:
                 update_function()
@@ -325,6 +336,9 @@ class ModeltrainingGUI:
             
             ctk.CTkLabel(self.scheduler_options_frame, text="Eta min").grid(row=1, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkEntry(self.scheduler_options_frame, textvariable=self.eta_min_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+            
+        else: 
+            ctk.CTkLabel(self.scheduler_options_frame, text="No options for selected scheduler").grid(row=0, column=0, columnspan=3, sticky="e", padx=5, pady=5)
     
     def update_loss_function_options(self, *args):
         for widget in self.loss_function_options_frame.winfo_children():
@@ -340,7 +354,7 @@ class ModeltrainingGUI:
             ctk.CTkLabel(self.loss_function_options_frame, text="Gamma").grid(row=2, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkEntry(self.loss_function_options_frame, textvariable=self.gamma_var).grid(row=2, column=1, sticky="w", padx=5, pady=5)
             
-        if self.loss_func_var.get() == "Tversky":
+        elif self.loss_func_var.get() == "Tversky":
             ctk.CTkLabel(self.loss_function_options_frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkEntry(self.loss_function_options_frame, textvariable=self.alpha_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
             
@@ -402,7 +416,7 @@ class ModeltrainingGUI:
         
         # Widgets for encoder options
         ctk.CTkLabel(self.encoder_options_frame, text="Pretrained Weights").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-        ctk.CTkSwitch(self.encoder_options_frame, text=None, variable=self.pretrained_weights_var, onvalue="True", offvalue="False").grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        ctk.CTkSwitch(self.encoder_options_frame, text=None, variable=self.pretrained_weights_var, onvalue=True, offvalue=False).grid(row=0, column=1, sticky="w", padx=5, pady=5)
         
         
         ###############################################################################################################
@@ -458,7 +472,7 @@ class ModeltrainingGUI:
         ctk.CTkEntry(left_frame, textvariable=self.batch_size_var, validatecommand=self.validate_int_input).grid(row=13, column=1, sticky="w", padx=5, pady=5)
         
         ctk.CTkLabel(left_frame, text="Normalize").grid(row=14, column=0, sticky="e", padx=5, pady=5)
-        ctk.CTkSwitch(left_frame, text=None, textvariable=self.normalize_var, onvalue="True", offvalue="False").grid(row=14, column=1, sticky="w", padx=5, pady=5)
+        ctk.CTkSwitch(left_frame, text="", variable=self.normalize_var, onvalue=True, offvalue=False).grid(row=14, column=1, sticky="w", padx=5, pady=5)
         
         available_transforms = ["transforms.ToTensor", "transforms.Resize"]
         TransformWidget(left_frame, available_transforms=available_transforms).grid(row=15, column=0, columnspan=3, sticky="we", padx=5, pady=5)
@@ -472,33 +486,53 @@ class ModeltrainingGUI:
         right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
         
         plot_frame = ctk.CTkFrame(right_frame)
-        plot_frame.grid(row=0, column=0, sticky="nsew")
-        right_frame.grid_rowconfigure(0, weight=50)  # 70% of the height
-        right_frame.grid_columnconfigure(0, weight=1)
-
-        plot_label = ctk.CTkLabel(plot_frame, text="Plots will be displayed here")
-        plot_label.pack(expand=True)
-
+        plot_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True, pady=(0,0))
+        
+        plot_panel = PlotView(plot_frame).pack(fill=tk.BOTH, expand=True)
+        
         message_frame = ctk.CTkFrame(right_frame)
-        message_frame.grid(row=1, column=0, sticky="nsew")
-        right_frame.grid_rowconfigure(1, weight=2)
+        message_frame.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=False, pady=(0,0))
 
         # Terminal-style Text widget
-        self.messages_box = tk.Text(
+        messages_box = tk.Text(
             message_frame,
             wrap=tk.WORD,
             bg="black",  # Black background
             fg="white",  # White foreground (text color)
             font=("Courier New", 12),  # Monospace font, larger size
-            insertbackground="white", #cursor color
-            selectbackground="#333333", #selected text color
+            insertbackground="white",  # cursor color
+            selectbackground="#333333",  # selected text color
             selectforeground="white"
         )
-        scrollbar = tk.Scrollbar(message_frame, command=self.messages_box.yview)
-        self.messages_box.config(yscrollcommand=scrollbar.set)
+        scrollbar = tk.Scrollbar(message_frame, command=messages_box.yview)
+        messages_box.config(yscrollcommand=scrollbar.set)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.messages_box.pack(fill=tk.BOTH, expand=True)
-        self.messages_box.config(state=tk.DISABLED)
+        messages_box.pack(fill=tk.BOTH, expand=True)
+        messages_box.config(state=tk.DISABLED)
+
+        # Assign relative weights using pack_propagate
+        right_frame.pack_propagate(False) # do not automatically resize
+        plot_frame.pack_configure(expand=True, fill=tk.BOTH)
+        message_frame.pack_configure(expand=False, fill=tk.BOTH, pady=(0,0), ipady=0)
+        right_frame.pack_configure(expand=True)
+
+
+        def adjust_message_height(event=None):
+            total_height = right_frame.winfo_height()
+
+            # Calculate a 70% height for plot_frame and 30% for message_frame
+            plot_height = int(total_height * 0.7)
+            message_height = int(total_height * 0.3)
+            
+            # Set heights to the containers that are then used to allocate space
+            plot_frame.config(height=plot_height)
+            message_frame.config(height=message_height)
+
+        # Initial height setup
+        right_frame.after(1, adjust_message_height)
+
+        # Update height on resize
+        right_frame.bind("<Configure>", adjust_message_height)
         
     def log_message(self, message):
         if self.messages_box:

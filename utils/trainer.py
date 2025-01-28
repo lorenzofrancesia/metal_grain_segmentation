@@ -30,7 +30,7 @@ class Trainer():
                  output_dir="../runs",
                  resume=False,
                  resume_path=None,
-                 early_stopping=10,
+                 early_stopping=50,
                  verbose=True
                  ):
         
@@ -435,7 +435,7 @@ class Trainer():
                 plt.title('Mask')
                 plt.axis('off')
 
-                filename = f"{self.current_epoch}.png"
+                filename = f"{self.current_epoch+1}.png"
                 filepath = os.path.join(image_evolution_dir, filename)
                 plt.savefig(filepath)
                 plt.close()

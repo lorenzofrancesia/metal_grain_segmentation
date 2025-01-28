@@ -64,7 +64,7 @@ def get_model(args, aux_params=None):
     weights = "imagenet" if bool(args.weights) else None
         
     try:
-        if args.model == 'U-Net':
+        if args.model == 'U-Net' or args.model == 'Unet':
             model = torchseg.Unet(
                 encoder_name=args.encoder,
                 encoder_weights=weights,
