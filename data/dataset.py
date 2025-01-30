@@ -25,8 +25,8 @@ class SegmentationDataset(Dataset):
         self.mask_dir = mask_dir
         self.image_paths = sorted(os.listdir(image_dir))
         self.mask_paths = sorted(os.listdir(mask_dir))
-        self.image_transform = transforms.Compose([transforms.Resize(512), transforms.ToTensor()])#image_transform
-        self.mask_transform = transforms.Compose([transforms.Resize(512), transforms.ToTensor()])#mask_transform
+        self.image_transform = image_transform
+        self.mask_transform = mask_transform
         self.mean = None
         self.std = None
         self.normalize = normalize

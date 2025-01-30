@@ -1,6 +1,9 @@
 import argparse
 import torchseg
 import torch
+from torchvision.transforms import transforms
+import re
+import ast
 
 
 #Models
@@ -14,6 +17,7 @@ def get_args_train():
     # Model parameters 
     parser.add_argument('--model', type=str, default='Unet', help='Model to train')
     parser.add_argument("--dropout", type=float, default=0, help='Dropout probability.')
+    parser.add_argument("--pooling",  type=str, default='max', help='Type of pooling used.')
     
     # Encoder parameters
     parser.add_argument('--encoder', type=str, default='resnet152', help='Model to train.')
@@ -203,3 +207,100 @@ def get_args_test():
     parser.add_argument("--normalize", default=False, action="store_true", help="Activate normalization")
     
     return parser.parse_args()
+
+
+
+def parse_transforms(transform_strings_str):
+    """
+    Parses a string representing a list of transform strings into a 
+    torchvision.transforms.Compose object.
+
+    Args:
+        transform_strings_str: A string representing a list of transform strings.
+                               e.g., "['transforms.Resize((512, 512))', 'transforms.ToTensor()']"
+
+    Returns:
+        A transforms.Compose object or None if an error occurred.
+    """
+    try:
+        # Safely evaluate the input string as a Python list
+        transform_strings = ast.literal_eval(transform_strings_str)
+    except (SyntaxError, ValueError) as e:
+        print(f"Error: Input string is not a valid list: {e}")
+        return None
+
+    if not isinstance(transform_strings, list):
+        print("Error: Input is not a list of strings.")
+        return None
+
+    transform_list = []
+    for transform_str in transform_strings:
+        try:
+            transform = parse_single_transform(transform_str)
+            transform_list.append(transform)
+        except ValueError as e:
+            print(f"Error processing transform '{transform_str}': {e}")
+            return None
+
+    return transforms.Compose(transform_list)
+
+def parse_single_transform(transform_str):
+    """
+    Parses a single transform string and returns the corresponding transform object.
+
+    Args:
+        transform_str: A string representing a single transform.
+                       e.g., "transforms.Resize((512, 512))"
+
+    Returns:
+        A transform object.
+    """
+    # Match transforms with or without arguments
+    match = re.match(r"transforms\.(\w+)(?:\((.*)\))?", transform_str)
+    if not match:
+        raise ValueError(f"Invalid transform format: {transform_str}")
+
+    transform_name, transform_args_str = match.groups()
+    transform_args = {}
+
+    if transform_args_str:
+        # Parse arguments using eval within a safe context
+        try:
+            # Create a safe dictionary for evaluation
+            safe_dict = {'__builtins__': None}  # Restrict built-in functions
+            # Allow specific functions if needed, like 'tuple'
+            safe_dict['tuple'] = tuple
+
+            # Check if the argument string represents a tuple
+            if transform_args_str.startswith('(') and transform_args_str.endswith(')'):
+                # Evaluate the entire argument string as a tuple
+                try:
+                    args_tuple = ast.literal_eval(transform_args_str)
+                    if isinstance(args_tuple, tuple):
+                        transform_args = {'size': args_tuple}  # Resize expects a 'size' argument
+                    else:
+                        raise ValueError("Argument is not a tuple")
+                except (SyntaxError, ValueError):
+                    raise ValueError(f"Invalid transform arguments (tuple parsing failed): {transform_args_str}")
+            else:
+                # Parse arguments as key-value pairs or positional arguments
+                for arg_str in transform_args_str.split(','):
+                    arg_str = arg_str.strip()
+                    if '=' in arg_str:
+                        key, value = arg_str.split('=', 1)
+                        # Evaluate the value in a safe context
+                        transform_args[key.strip()] = eval(value.strip(), safe_dict)
+                    else:
+                        # Evaluate the value in a safe context
+                        transform_args[len(transform_args)] = eval(arg_str, safe_dict)
+        except (SyntaxError, NameError, ValueError) as e:
+            raise ValueError(f"Invalid transform arguments: {transform_args_str} - Error: {e}")
+
+    try:
+        transform = getattr(transforms, transform_name)(**transform_args)
+    except AttributeError:
+        raise ValueError(f"Invalid transform name: {transform_name}")
+    except TypeError as e:
+        raise ValueError(f"Error creating transform {transform_name}: {e}")
+
+    return transform

@@ -1,7 +1,13 @@
 import os
-from tqdm import tqdm
+import sys
+import tqdm
 import csv
 import matplotlib.pyplot as plt
+import yaml
+from collections import defaultdict
+import imageio
+from sklearn.metrics import precision_recall_curve
+from PIL import Image
 
 import torch
 import torch.nn as nn
@@ -9,6 +15,7 @@ from torch.utils.data import DataLoader # Unless I write my own data loader
 from torch import optim
 import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
+import segmentation_models_pytorch as smp
 
 from utils.metrics import BinaryMetrics
 from data.dataset import SegmentationDataset
@@ -23,21 +30,20 @@ class Trainer():
                  train_transform= transforms.ToTensor(),
                  optimizer=optim.Adam, 
                  loss_function=nn.BCELoss(),
-                 metrics=BinaryMetrics(),
                  device='cuda' if torch.cuda.is_available() else 'cpu',
                  lr_scheduler=None,
                  epochs=10,
                  output_dir="../runs",
                  resume=False,
-                 resume_path=None,
+                 resume_model_path=None,
                  early_stopping=50,
-                 verbose=True
+                 verbose=True, 
+                 config=None
                  ):
         
         self.model = model
         self.optimizer = optimizer
         self.loss_function = loss_function
-        self.metrics = metrics
         self.device = device
         self.lr_scheduler = lr_scheduler
         
@@ -49,7 +55,7 @@ class Trainer():
         
         # Resume
         self.resume = resume
-        self.resume_path = resume_path
+        self.resume_model_path = resume_model_path
         
         # Training parameters 
         self.epochs = epochs
@@ -64,6 +70,8 @@ class Trainer():
         # Output
         self.output_dir = output_dir
         self._initialize_output_folder()
+        self.config = config
+        self._save_config()
         
         self._initialize_csv()
         self.writer = SummaryWriter(log_dir=self.exp_dir)
@@ -78,23 +86,11 @@ class Trainer():
         self.model.to(self.device)
 
         if self.resume:
-            self._load_checkpoint()
-    
+            self._load_checkpoint()   
 
     def _initialize_output_folder(self):
         
         exp_dir = os.path.join(self.output_dir, "exp")
-        
-        if self.resume:
-            if "results" in os.listdir(os.path.join(self.resume_path, "../..")):
-                self.exp_dir = os.path.join(self.resume_path, "../../..")
-                self.log_dir = os.path.join(self.exp_dir, 'logs')
-                self.models_dir = os.path.join(self.exp_dir, 'models')
-                self.results_dir = os.path.join(self.exp_dir, "results")
-                return
-            else:
-                self.exp_dir = os.path.join(self.resume_path, "..", "exp")
-
 
         if not os.path.exists(exp_dir):
             self.exp_dir = exp_dir
@@ -107,30 +103,73 @@ class Trainer():
                     break
                 counter += 1        
         
-        self.log_dir = os.path.join(self.exp_dir, 'logs')
         self.models_dir = os.path.join(self.exp_dir, 'models')
         self.results_dir = os.path.join(self.exp_dir, "results")
         
-        for sub_dir in [self.exp_dir, self.log_dir, self.models_dir, self.results_dir]:
+        for sub_dir in [self.exp_dir, self.models_dir, self.results_dir]:
             os.makedirs(sub_dir, exist_ok=True)
-
+            
+    def _save_config(self):
+        config_file  = {
+            "Model Parameters:" : {
+                "model" : self.config.model,
+                "dropout" : self.config.dropout
+            },
+            "Encoder Parameters:" : {
+                "encoder" : self.config.encoder,
+                "weights" : self.config.weights
+            },
+            "Optimizer Parameters:" : {
+                "optimizer" : self.config.encoder,
+                "lr" : self.config.weights,
+                "momentum" : self.config.momentum
+            },
+            "Scheduler Parameters:" : {
+                "scheduler" : self.config.scheduler,
+                "start_factor" : self.config.start_factor,
+                "end_factor" : self.config.end_factor,
+                "iterations" : self.config.iterations,
+                "t_max" : self.config.t_max,
+                "eta_min" : self.config.eta_min
+            },
+            "Loss Function Parameters:" : {
+                "loss_function" : self.config.loss_function,
+                "alpha" : self.config.alpha,
+                "beta" : self.config.beta,
+                "gamma" : self.config.gamma
+            },
+            "Directories:" : {
+                "data_dir" : self.config.data_dir,
+                "output_dir" : self.config.output_dir
+            },
+            "Training Parameters:" : {
+                "epochs" : self.config.epochs,
+                "batch_size" : self.config.batch_size
+            },
+            "Dataset Parameters:" : {
+                "normalize" : self.config.normalize,
+                "transform" : self.config.transform
+            },
+        }
         
+        with open(os.path.join(self.exp_dir, "config.yml"), "w+") as outfile:
+            yaml.dump(config_file, outfile)
+    
     def _initialize_csv(self):
         self.results_csv = os.path.join(self.results_dir, "results.csv")
         
-        if not self.resume:
-            if not os.path.exists(self.results_csv):
-                with open(self.results_csv, mode="w+", newline="") as file:
-                    writer = csv.writer(file)
-                    headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate", "Precision", "Recall", "F1", "Accuracy", "Dice", "IoU"]
-                    writer.writerow(headers)       
+        if not os.path.exists(self.results_csv):
+            with open(self.results_csv, mode="w+", newline="") as file:
+                writer = csv.writer(file)
+                headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate", "Precision", "Recall", "F1", "Accuracy", "IoU"]
+                writer.writerow(headers)       
                       
-    def _log_results_to_csv(self, epoch, train_loss, val_loss, metrics):
+    def _log_results_to_csv(self, epoch, train_loss, val_loss):
         if self.results_csv:
             with open(self.results_csv, mode="a", newline="") as file:
                 writer = csv.writer(file)
                 row = [epoch, train_loss, val_loss, self.optimizer.param_groups[0]['lr']]
-                row += [metrics.get(metric, 0) for metric in self.metrics.metrics.keys()]
+                row += [self.metrics.get(metric, 0) for metric in self.metrics.keys()]
                 writer.writerow(row)
     
     def _get_dataloaders(self):
@@ -162,7 +201,6 @@ class Trainer():
             'current_epoch': self.current_epoch,
             'global_step': self.global_step,
             'lr_scheduler': self.lr_scheduler.state_dict() if self.lr_scheduler else None,
-            'output_dir': self.output_dir
         }
         torch.save(checkpoint, checkpoint_path)
         if self.verbose:
@@ -170,7 +208,7 @@ class Trainer():
     
     def _load_checkpoint(self):
         
-        if not self.resume_path:
+        if not self.resume_model_path:
             raise ValueError("Provide path to the checkpoint")
         checkpoint = torch.load(self.resume_path)
         self.model.load_state_dict(checkpoint['model_state_dict'])
@@ -179,9 +217,170 @@ class Trainer():
         self.global_step = checkpoint['global_step']
         if self.lr_scheduler and checkpoint['lr_scheduler']:
             self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
-        self.output_dir = checkpoint['output_dir']
         if self.verbose:
             print(f'Loaded checkpoint from {self.resume_path}')
+    
+    def _train_step(self, batch):
+        self.model.train()
+        inputs, targets = batch
+        inputs, targets = inputs.to(self.device), targets.to(self.device)
+    
+        # Forward pass
+        outputs = self.model(inputs)[0]
+
+        outputs_probs = torch.sigmoid(outputs)       
+        loss = self.loss_function(outputs_probs, targets)
+        
+        # Backward pass
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        
+        return loss.item()
+    
+    def _validate(self):
+        self.model.eval()
+        val_loss = 0
+        all_outputs = []
+        all_targets = []
+
+        with torch.inference_mode():
+            for batch_idx, batch in enumerate(self.val_loader):
+                inputs, targets = batch
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
+
+                outputs = self.model(inputs)[0]
+                outputs_probs = torch.sigmoid(outputs)
+                
+                targets = targets.long()
+                
+                loss = self.loss_function(outputs_probs, targets)
+                val_loss += loss.item()
+                
+                # outputs_binary = (outputs_probs > 0.5).long()
+                
+                
+                # debugging = False 
+                # if debugging:
+                #     print("----------Inputs & Targets-------------")
+                #     print(f"\n Batch {batch_idx}")
+                #     print("inputs shape:", inputs.shape)
+                #     print("Targets shape:", targets.shape)
+                #     print("targets unique values:", torch.unique(targets))
+                #     print("Targets dtype:" ,targets.dtype)
+                #     print("Targets long shape:", targets.shape)
+                #     print("targets long unique values:", torch.unique(targets))
+                #     print("Targets long dtype:", targets.dtype)
+                    
+                #     print("----------Outputs (Logits)-------------")               
+                #     print("outputs shape:", outputs.shape)
+                #     print("outputs unique values:", torch.unique(outputs))
+                #     print("outputs dtype:", outputs.dtype)
+                    
+                #     print("----------Outputs (Probabilities)-------------")
+                #     print("probs shape:", outputs_probs.shape)
+                #     print("prnbs unique values:", torch.unique(outputs_probs))
+                #     print("probs dtype:", outputs_probs.dtype)
+                                   
+                #     print("----------Outputs (Binary)-------------")
+                #     print("binary shape:", outputs_binary.shape)
+                #     print("binary unique values:", torch.unique(outputs_binary))
+                #     print("binary dtype:", outputs_binary.dtype)
+
+                all_outputs.append(outputs_probs.detach())
+                # all_outputs.append(outputs_binary.detach())
+                
+                all_targets.append(targets.detach())
+        
+        # Aggregate predicitions and targets
+        all_outputs = torch.cat(all_outputs, dim=0)
+        all_targets = torch.cat(all_targets, dim=0)
+        
+        # if debugging:
+        #     all_outputs_flat = all_outputs.view(-1)
+        #     all_targets_flat = all_targets.view(-1)
+            
+        #     # Check if all values are between 0 and 1
+        #     if not torch.all((all_outputs_flat >= 0) & (all_outputs_flat <= 1)):
+        #         raise ValueError("All output values should be between 0 and 1.")
+        #     if not torch.all((all_targets_flat >= 0) & (all_targets_flat <= 1)):
+        #         raise ValueError("All target values should be between 0 and 1.")
+        
+        metrics_results = defaultdict()
+        
+        tp, fp, fn, tn = smp.metrics.get_stats(all_outputs, all_targets, mode="binary", threshold=0.5)
+        metrics_results["iou"]=smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro" ).item()
+        metrics_results["f1"] = smp.metrics.f1_score(tp, tn, fn ,tn, reduction="micro").item()
+        metrics_results["precision"]= smp.metrics.precision(tp, fp, fn, tn, reduction="micro").item()
+        metrics_results["recall"]= smp.metrics.recall(tp, fp, fn, tn, reduction="micro").item()
+        metrics_results["accuracy"] = smp.metrics.accuracy(tp, fp, fn, tn, reduction="micro").item()
+
+            
+        # metrics_results = self.metrics.calculate_metrics(all_outputs, all_targets)
+        val_loss /= len(self.val_loader)
+        
+        return val_loss, { **metrics_results}
+    
+    def train(self):
+        # Initialize dataloaders 
+        self._get_dataloaders()
+        
+        for epoch in range(self.current_epoch, self.epochs):
+            self.current_epoch = epoch
+            train_loss = 0
+            
+            # Training 
+            progress_bar = tqdm.tqdm(self.train_loader, desc=f'Epoch {epoch+1}/{self.epochs}', leave=False, file=sys.stdout)
+            for batch in progress_bar:
+                loss = self._train_step(batch)
+                train_loss += loss
+                self.global_step += 1
+                
+            train_loss /= len(self.train_loader)
+            
+            self.writer.add_scalar("Loss/train", train_loss, epoch)
+            
+
+            val_loss, self.metrics = self._validate()
+            
+            self.writer.add_scalar("Loss/val", val_loss, epoch)
+            for name, result in self.metrics.items():
+                self.writer.add_scalar(f"Metrics/{name}", result, epoch)
+
+            if self.verbose:
+                print(f'\nEpoch {epoch+1}/{self.epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f} - P: {self.metrics["precision"]:.4f} - R: {self.metrics["recall"]:.4f} - Acc: {self.metrics["accuracy"]:.4f} - F1: {self.metrics["f1"]:.4f} - IoU: {self.metrics["iou"]:.4f}')
+            self._log_results_to_csv(epoch+1, train_loss, val_loss)
+            
+
+            
+            # Early stopping
+            if val_loss < self.best_loss:
+                self.best_loss = val_loss
+                self.early_stopping_counter = 0
+                best_path = f"{self.models_dir}/best.pth"
+                self._save_checkpoint(best_path)
+                
+            else:
+                self.early_stopping_counter += 1
+                if self.early_stopping_counter >= self.early_stopping:
+                    print(f"Early stopping triggered at epoch {epoch+1}")
+                    break
+                    
+            # Update lr with scheduler
+            if self.lr_scheduler:
+                self.lr_scheduler.step()
+                
+            self.image_evolution()
+        
+        if self.best_loss != val_loss: 
+            last_path = f"{self.models_dir}/last.pth"
+            self._save_checkpoint(last_path)
+        
+        self.writer.flush() 
+        self.writer.close()   
+        self.loss_plots()
+        self.pr_curve()
+        self.create_animation()
     
     def loss_plots(self):
         with open(self.results_csv, mode="r", newline="") as file:
@@ -221,25 +420,7 @@ class Trainer():
         plt.title("Val Loss")
         plt.savefig(os.path.join(self.results_dir, "val_loss.png"))
     
-    def _train_step(self, batch):
-        self.model.train()
-        inputs, targets = batch
-        inputs, targets = inputs.to(self.device), targets.to(self.device)
-    
-        # Forward pass
-        outputs = self.model(inputs)[0]
-
-        outputs_probs = torch.sigmoid(outputs)       
-        loss = self.loss_function(outputs_probs, targets)
-        
-        # Backward pass
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
-        
-        return loss.item()
-    
-    def _validate(self):
+    def pr_curve(self):
         self.model.eval()
         val_loss = 0
         all_outputs = []
@@ -254,128 +435,23 @@ class Trainer():
                 outputs_probs = torch.sigmoid(outputs)
                 
                 targets = targets.long()
-                
-                loss = self.loss_function(outputs_probs, targets)
-                val_loss += loss.item()
-                
-                outputs_binary = (outputs_probs > 0.5).long()
-                
-                
-                debugging = False 
-                if debugging:
-                    print("----------Inputs & Targets-------------")
-                    print(f"\n Batch {batch_idx}")
-                    print("inputs shape:", inputs.shape)
-                    print("Targets shape:", targets.shape)
-                    print("targets unique values:", torch.unique(targets))
-                    print("Targets dtype:" ,targets.dtype)
-                    print("Targets long shape:", targets.shape)
-                    print("targets long unique values:", torch.unique(targets))
-                    print("Targets long dtype:", targets.dtype)
-                    
-                    print("----------Outputs (Logits)-------------")               
-                    print("outputs shape:", outputs.shape)
-                    print("outputs unique values:", torch.unique(outputs))
-                    print("outputs dtype:", outputs.dtype)
-                    
-                    print("----------Outputs (Probabilities)-------------")
-                    print("probs shape:", outputs_probs.shape)
-                    print("prnbs unique values:", torch.unique(outputs_probs))
-                    print("probs dtype:", outputs_probs.dtype)
-                                   
-                    print("----------Outputs (Binary)-------------")
-                    print("binary shape:", outputs_binary.shape)
-                    print("binary unique values:", torch.unique(outputs_binary))
-                    print("binary dtype:", outputs_binary.dtype)
 
-
-                all_outputs.append(outputs_binary.detach())
+                all_outputs.append(outputs_probs.detach())
                 all_targets.append(targets.detach())
         
         # Aggregate predicitions and targets
-        all_outputs = torch.cat(all_outputs, dim=0)
-        all_targets = torch.cat(all_targets, dim=0)
+        all_outputs = torch.cat(all_outputs, dim=0).numpy().flatten()
+        all_targets = torch.cat(all_targets, dim=0).numpy().flatten()
+
         
-        if debugging:
-            all_outputs_flat = all_outputs.view(-1)
-            all_targets_flat = all_targets.view(-1)
-            
-            # Check if all values are between 0 and 1
-            if not torch.all((all_outputs_flat >= 0) & (all_outputs_flat <= 1)):
-                raise ValueError("All output values should be between 0 and 1.")
-            if not torch.all((all_targets_flat >= 0) & (all_targets_flat <= 1)):
-                raise ValueError("All target values should be between 0 and 1.")
-               
-        metrics_results = self.metrics.calculate_metrics(all_outputs, all_targets)
-        val_loss /= len(self.val_loader)
-        
-        return val_loss, { **metrics_results}
+        precision, recall, _ = precision_recall_curve(all_targets, all_outputs, pos_label=1)
+        plt.figure(figsize=(8, 6))
+        plt.plot(recall, precision, label='PR Curve')
+        plt.xlabel('Recall')
+        plt.ylabel('Precision')
+        plt.title('Precision-Recall Curve')
+        plt.savefig(os.path.join(self.results_dir, "pr_curve.png"))
     
-    def train(self):
-        # Initialize dataloaders 
-        self._get_dataloaders()
-        
-        for epoch in range(self.current_epoch, self.epochs):
-            self.current_epoch = epoch
-            train_loss = 0
-            
-            # Training 
-            progress_bar = tqdm(self.train_loader, desc=f'Epoch {epoch+1}/{self.epochs}', leave=False)
-            for batch in progress_bar:
-                loss = self._train_step(batch)
-                train_loss += loss
-                self.global_step += 1
-                
-            train_loss /= len(self.train_loader)
-            
-            self.writer.add_scalar("Loss/train", train_loss, epoch)
-            
-            # Validation if val_dataloader exists
-            val_loss = 0
-            if self.val_loader:
-                val_loss, metrics = self._validate()
-                
-                self.writer.add_scalar("Loss/val", val_loss, epoch)
-                for name, result in metrics.items():
-                    self.writer.add_scalar(f"Metrics/{name}", result, epoch)
-
-                if self.verbose:
-                    print(f'\nEpoch {epoch+1}/{self.epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f} - P: {metrics["Precision"]:.4f} - R: {metrics["Recall"]:.4f} - Acc: {metrics["Accuracy"]:.4f} - F1: {metrics["F1"]:.4f} - IoU: {metrics["IoU"]:.4f} - Dice: {metrics["Dice"]:.4f}')
-                self._log_results_to_csv(epoch+1, train_loss, val_loss, metrics)
-            else:
-                val_loss = train_loss
-                if self.verbose:
-                    print(f'\nEpoch {epoch+1}/{self.epochs} - Training Loss: {train_loss:.4f}')
-            
-
-            
-            # Early stopping
-            if val_loss < self.best_loss:
-                self.best_loss = val_loss
-                self.early_stopping_counter = 0
-                best_path = f"{self.models_dir}/best.pth"
-                self._save_checkpoint(best_path)
-                
-            else:
-                self.early_stopping_counter += 1
-                if self.early_stopping_counter >= self.early_stopping:
-                    print(f"Early stopping triggered at epoch {epoch+1}")
-                    break
-                    
-            # Update lr with scheduler
-            if self.lr_scheduler:
-                self.lr_scheduler.step()
-                
-            self.image_evolution()
-        
-        if self.best_loss != val_loss: 
-            last_path = f"{self.models_dir}/last.pth"
-            self._save_checkpoint(last_path)
-        
-        self.writer.flush() 
-        self.writer.close()   
-        self.loss_plots()
-        
     def image_evolution(self):
         """
         This function visualizes the output of the model during training.
@@ -388,9 +464,9 @@ class Trainer():
         """
 
         # Create directory if it doesn't exist
-        image_evolution_dir = os.path.join(self.results_dir, "image_evolution")
-        if not os.path.exists(image_evolution_dir):
-            os.makedirs(image_evolution_dir)
+        self.image_evolution_dir = os.path.join(self.results_dir, "image_evolution")
+        if not os.path.exists(self.image_evolution_dir):
+            os.makedirs(self.image_evolution_dir)
 
         try:
             # Get image and mask
@@ -436,17 +512,32 @@ class Trainer():
                 plt.axis('off')
 
                 filename = f"{self.current_epoch+1}.png"
-                filepath = os.path.join(image_evolution_dir, filename)
+                filepath = os.path.join(self.image_evolution_dir, filename)
                 plt.savefig(filepath)
                 plt.close()
 
         except Exception as e:
             print(f"Error during image evolution: {e}")
                 
-            
+    def create_animation(self):        
                 
+        image_files = sorted([f for f in os.listdir(self.image_evolution_dir) if os.path.isfile(os.path.join(self.image_evolution_dir, f)) and f.endswith(('.png', '.jpg', '.jpeg'))])
+        images = []
+        for image_file in image_files:
+            image_path = os.path.join(self.image_evolution_dir, image_file)
+            try:
+                img = Image.open(image_path)
+                images.append(img)
+            except Exception as e:
+                print(f"Error opening image {image_path}: {e}")
+                return
         
-                
+        try:
+            output_path = os.path.join(self.image_evolution_dir, "evolution.gif")
+            imageio.mimsave(output_path, images, fps=4/self.epochs, loop=1,)
+        except:
+            print(f"Error creating animation: {e}")        
+                        
                     
         
         

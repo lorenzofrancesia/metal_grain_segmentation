@@ -1,11 +1,14 @@
 from torch import optim
+from torchvision.transforms import transforms
 
 from utils.metrics import BinaryMetrics
 from loss.tversky import TverskyLoss
-from utils.input import get_args_train, get_model, get_optimizer, get_scheduler, get_loss_function
+from utils.input import get_args_train, get_model, get_optimizer, get_scheduler, get_loss_function, parse_transforms
 from utils.trainer import Trainer            
     
 import torchseg
+
+
  
 def main():
     
@@ -17,8 +20,9 @@ def main():
             dropout = None
     except AttributeError:
         dropout = None
+        
     aux_params=dict(
-        pooling='max',            
+        pooling=args.pooling,            
         classes=1,
         dropout=dropout
         )       
@@ -29,16 +33,19 @@ def main():
     scheduler = get_scheduler(args, optimizer=optimizer)
     loss_function = get_loss_function(args)
     
+    transform = parse_transforms(args.transform)
+    
     trainer = Trainer(model=model,
                       data_dir=args.data_dir,
+                      train_transform=transform,
                       batch_size=args.batch_size,
                       optimizer=optimizer,
                       loss_function=loss_function,
-                      metrics=BinaryMetrics(),
                       lr_scheduler=scheduler,
                       epochs=args.epochs,
                       output_dir=args.output_dir,
-                      normalize=args.normalize
+                      normalize=args.normalize,
+                      config=args
                       )
     
     trainer.train()
