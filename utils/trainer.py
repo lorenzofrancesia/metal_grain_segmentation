@@ -228,8 +228,14 @@ class Trainer():
         # Forward pass
         outputs = self.model(inputs)[0]
 
-        outputs_probs = torch.sigmoid(outputs)       
-        loss = self.loss_function(outputs_probs, targets)
+        outputs_probs = torch.sigmoid(outputs)     
+        
+        if isinstance(self.loss_function, list):
+            loss_func1, loss_func2, weight1, weight2 = self.loss_function
+            loss = weight1 * loss_func1(outputs_probs, targets) + weight2 * loss_func2(outputs_probs, targets)
+        else:
+            loss = self.loss_function(outputs_probs, targets)  
+
         
         # Backward pass
         self.optimizer.zero_grad()
@@ -254,7 +260,11 @@ class Trainer():
                 
                 targets = targets.long()
                 
-                loss = self.loss_function(outputs_probs, targets)
+                if isinstance(self.loss_function, list):
+                    loss_func1, loss_func2, weight1, weight2 = self.loss_function
+                    loss = weight1 * loss_func1(outputs_probs, targets) + weight2 * loss_func2(outputs_probs, targets)
+                else:
+                    loss = self.loss_function(outputs_probs, targets)  
                 val_loss += loss.item()
                 
                 # outputs_binary = (outputs_probs > 0.5).long()

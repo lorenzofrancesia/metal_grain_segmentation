@@ -126,7 +126,6 @@ class ModeltrainingGUI:
         self.model_var = tk.StringVar(value="U-Net")
         self.dropout_prob_var = tk.StringVar(value="0.5")
         self.pooling_type_var = tk.StringVar(value="Max")
-
         self.encoder_var = tk.StringVar(value="resnet50")
         self.pretrained_weights_var = tk.BooleanVar(value=False)
 
@@ -145,6 +144,10 @@ class ModeltrainingGUI:
         self.gamma_lr_var = tk.StringVar(value="0.5")
 
         self.loss_func_var = tk.StringVar(value="FocalTversky")
+        self.loss_func1_var = tk.StringVar(value="FocalTversky")
+        self.loss_func2_var = tk.StringVar(value="FocalTversky")
+        self.loss_func1_weight_var = tk.StringVar(value="0.5")
+        self.loss_func2_weight_var = tk.StringVar(value="0.5")
         self.alpha_var = tk.StringVar(value="0.7")
         self.beta_var = tk.StringVar(value="0.3")
         self.gamma_var = tk.StringVar(value="1.3333")
@@ -215,6 +218,10 @@ class ModeltrainingGUI:
             "step_size": self.step_size_var.get(),
             "gamma_lr": self.gamma_lr_var.get(),
             "loss_func": self.loss_func_var.get(),
+            "loss_func1": self.loss_func1_var.get(),
+            "loss_func2": self.loss_func2_var.get(),
+            "loss_func1_weight": self.loss_func1_weight_var.get(),
+            "loss_func2_weight": self.loss_func2_weight_var.get(),
             "alpha": self.alpha_var.get(),
             "beta": self.beta_var.get(),
             "gamma": self.gamma_var.get(),
@@ -256,6 +263,10 @@ class ModeltrainingGUI:
                 self.step_size_var.set(config.get("step_size", ""))
                 self.gamma_lr_var.set(config.get("gamma_lr", ""))
                 self.loss_func_var.set(config.get("loss_func", ""))
+                self.loss_func1_var.set(config.get("loss_func1", ""))
+                self.loss_func2_var.set(config.get("loss_func2", ""))
+                self.loss_func1_weight_var.set(config.get("loss_func1_weight", ""))
+                self.loss_func2_weight_var.set(config.get("loss_func2_weight", ""))
                 self.alpha_var.set(config.get("alpha", ""))
                 self.beta_var.set(config.get("beta", ""))
                 self.gamma_var.set(config.get("gamma", ""))
@@ -352,6 +363,76 @@ class ModeltrainingGUI:
 
             ctk.CTkLabel(self.loss_function_options_frame, text="Beta").grid(row=1, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkEntry(self.loss_function_options_frame, textvariable=self.beta_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+           
+        elif self.loss_func_var.get() == "Combo":
+            ctk.CTkLabel(self.loss_function_options_frame, text="1").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkComboBox(self.loss_function_options_frame, values=["FocalTversky",
+                                                                     "Tversky",
+                                                                     "IoU"], variable=self.loss_func1_var).grid(row=0, column=1, sticky="e", padx=5, pady=5)
+            self.loss_function_options_frame1 = ctk.CTkFrame(self.loss_function_options_frame)
+            loss_function_option_button1 = ctk.CTkButton(self.loss_function_options_frame, text="\u25BC", width=30)
+            loss_function_option_button1.configure(command=lambda btn=loss_function_option_button1: self.toggle_options(self.loss_function_options_frame1, row=1, button=btn, update_function= lambda: self.update_loss_function_submenu(1)))
+            loss_function_option_button1.grid(row=0, column=2, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(self.loss_function_options_frame, text="w").grid(row=0, column=3, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(self.loss_function_options_frame, textvariable=self.loss_func1_weight_var, width=30).grid(row=0, column=4, sticky="w", padx=5, pady=5)
+            
+            
+            ctk.CTkLabel(self.loss_function_options_frame, text="2").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkComboBox(self.loss_function_options_frame, values=["FocalTversky",
+                                                                     "Tversky",
+                                                                     "IoU"], variable=self.loss_func2_var).grid(row=2, column=1, sticky="e", padx=5, pady=5)
+            self.loss_function_options_frame2 = ctk.CTkFrame(self.loss_function_options_frame)
+            loss_function_option_button2 = ctk.CTkButton(self.loss_function_options_frame, text="\u25BC", width=30, )
+            loss_function_option_button2.configure(command=lambda btn=loss_function_option_button2: self.toggle_options(self.loss_function_options_frame2, row=3, button=btn, update_function= lambda: self.update_loss_function_submenu(2)))
+            loss_function_option_button2.grid(row=2, column=2, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(self.loss_function_options_frame, text="w").grid(row=2, column=3, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(self.loss_function_options_frame, textvariable=self.loss_func2_weight_var, width=30).grid(row=2, column=4, sticky="w", padx=5, pady=5)
+            
+            self.update_loss_function_submenu(1)
+            self.update_loss_function_submenu(2)
+
+        else:
+            return
+            
+        # Update trace for submenus only when 'Combo' is selected
+        if self.loss_func_var.get() == "Combo":
+            self.loss_func1_var.trace_add("write", lambda *args: self.update_loss_function_submenu(1))
+            self.loss_func2_var.trace_add("write", lambda *args: self.update_loss_function_submenu(2))
+        else:
+            self.loss_func1_var.trace_remove("write")
+            self.loss_func2_var.trace_remove("write")
+
+        
+    def update_loss_function_submenu(self, option, *args):
+        if option == 1:
+            frame = self.loss_function_options_frame1
+            loss_func_var = self.loss_func1_var
+        elif option == 2:
+            frame = self.loss_function_options_frame2
+            loss_func_var = self.loss_func2_var
+        else:
+            return
+        
+        for widget in frame.winfo_children():
+            widget.destroy()
+
+        if loss_func_var.get() == "FocalTversky":
+            ctk.CTkLabel(frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(frame, textvariable=self.alpha_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+
+            ctk.CTkLabel(frame, text="Beta").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(frame, textvariable=self.beta_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+
+            ctk.CTkLabel(frame, text="Gamma").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(frame, textvariable=self.gamma_var).grid(row=2, column=1, sticky="w", padx=5, pady=5)
+
+        elif loss_func_var.get() == "Tversky":
+            ctk.CTkLabel(frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(frame, textvariable=self.alpha_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+
+            ctk.CTkLabel(frame, text="Beta").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(frame, textvariable=self.beta_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+
 
     def create_gui(self):
         
@@ -458,7 +539,8 @@ class ModeltrainingGUI:
         ctk.CTkLabel(left_frame, text="Loss function").grid(row=8, column=0, sticky="e", padx=5, pady=5)
         loss_function_dropdown = ctk.CTkComboBox(left_frame, values=["FocalTversky",
                                                                      "Tversky",
-                                                                     "IoU"], variable=self.loss_func_var).grid(row=8, column=1, sticky="e", padx=5, pady=5)
+                                                                     "IoU",
+                                                                     "Combo"], variable=self.loss_func_var).grid(row=8, column=1, sticky="e", padx=5, pady=5)
         self.loss_function_options_frame = ctk.CTkFrame(left_frame)
         loss_function_option_button = ctk.CTkButton(left_frame, text="\u25BC", width=30, )
         loss_function_option_button.configure(command=lambda btn=loss_function_option_button: self.toggle_options(self.loss_function_options_frame, row=9, button=btn, update_function=self.update_loss_function_options))
@@ -608,7 +690,12 @@ class ModeltrainingGUI:
             alpha = self.alpha_var.get()
             beta = self.beta_var.get()
             gamma = self.gamma_var.get()
-
+            
+            # Combo loss
+            loss_func1 = self.loss_func1_var.get()
+            loss_func1_weight = self.loss_func1_weight_var.get()
+            loss_func2 = self.loss_func2_var.get()
+            loss_func2_weight = self.loss_func2_weight_var.get()
 
             data_dir = self.data_dir_var.get()
             batch_size = int(self.batch_size_var.get())
@@ -642,10 +729,15 @@ class ModeltrainingGUI:
             args.extend(["--step_size", str(step_size)])
             args.extend(["--gamma_lr", str(gamma_lr)])
             
-            args.extend(["--loss_func", loss_func])
+            args.extend(["--loss_function", loss_func])
             args.extend(["--alpha", str(alpha)])
             args.extend(["--beta", str(beta)])
             args.extend(["--gamma", str(gamma)])
+            
+            args.extend(["--loss_function1", loss_func1])
+            args.extend(["--loss_function1_weight", loss_func1_weight])
+            args.extend(["--loss_function2", loss_func2])
+            args.extend(["--loss_function2_weight", loss_func2_weight])
             
             args.extend(["--batch_size", str(batch_size)])
             args.extend(["--epochs", str(epochs)])

@@ -31,7 +31,10 @@ def main():
 
     optimizer = get_optimizer(args, model=model)
     scheduler = get_scheduler(args, optimizer=optimizer)
+    
     loss_function = get_loss_function(args)
+    print(loss_function)
+
     
     transform = parse_transforms(args.transform)
     

@@ -45,6 +45,11 @@ def get_args_train():
     parser.add_argument('--beta', type=float, default=0.3, help='Beta for FocalTversky and Tversky.')
     parser.add_argument('--gamma', type=float, default=1.3333, help='Gamma for FocalTversky.')
     
+    parser.add_argument('--loss_function1', type=str, default='FocalTversky', help='Loss Function 1 for combo loss.')
+    parser.add_argument('--loss_function1_weight', type=float, default=0.5, help='Weight of loss Function 1 for combo loss.')
+    parser.add_argument('--loss_function2', type=str, default='FocalTversky', help='Loss Function 2 for combo loss.')
+    parser.add_argument('--loss_function2_weight', type=float, default=0.5, help='Weight of loss Function 2 for combo loss.')
+    
     # Directories
     parser.add_argument('--data_dir', type=str, default='../data', help='Directory containing the dataset.')
     parser.add_argument('--output_dir', type=str, default='../runs', help='Directory to save model checkpoints.')
@@ -185,23 +190,44 @@ def get_scheduler(args, optimizer):
     return scheduler
 
 def get_loss_function(args):
-    
+    """
+    Retrieves the loss function based on the configuration in args.
+
+    Args:
+        args: The parsed command-line arguments or configuration object.
+
+    Returns:
+        A loss function object or a tuple of (loss function object, weight) 
+        in the case of the "Combo" loss.
+    """
+
     if args.loss_function == "FocalTversky":
-        
-        loss_function = FocalTverskyLoss(alpha=args.alpha, beta=args.beta, gamma=args.gamma)
-        
+        return FocalTverskyLoss(alpha=args.alpha, beta=args.beta, gamma=args.gamma)
     elif args.loss_function == "Tversky":
-        
-        loss_function = TverskyLoss(alpha=args.alpha, beta=args.beta)
-        
+        return TverskyLoss(alpha=args.alpha, beta=args.beta)
     elif args.loss_function == "IoU":
-        
-        loss_function = IoULoss()
-        
+        return IoULoss()
+    elif args.loss_function == "Combo":
+        loss_func1 = get_loss_function_by_name(args.loss_function1, args)
+        loss_func2 = get_loss_function_by_name(args.loss_function2, args)
+        weight1 = float(args.loss_function1_weight)
+        weight2 = float(args.loss_function2_weight)
+        return [loss_func1, loss_func2, weight1, weight2]
     else:
         raise ValueError('Loss function type not recognized')
-        
-    return loss_function
+
+def get_loss_function_by_name(loss_func_name, args):
+    """
+    Retrieves a specific loss function by name using the provided arguments.
+    """
+    if loss_func_name == "FocalTversky":
+        return FocalTverskyLoss(alpha=args.alpha, beta=args.beta, gamma=args.gamma)
+    elif loss_func_name == "Tversky":
+        return TverskyLoss(alpha=args.alpha, beta=args.beta)
+    elif loss_func_name == "IoU":
+        return IoULoss()
+    else:
+        raise ValueError(f"Invalid loss function name for Combo option: {loss_func_name}")
          
 
 def get_args_test():
