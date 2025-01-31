@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import yaml
 from collections import defaultdict
 import imageio
-from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import precision_recall_curve, average_precision_score
 from PIL import Image
 
 import torch
@@ -153,7 +153,7 @@ class Trainer():
         }
         
         with open(os.path.join(self.exp_dir, "config.yml"), "w+") as outfile:
-            yaml.dump(config_file, outfile)
+            yaml.dump(config_file, outfile, sort_keys=False)
     
     def _initialize_csv(self):
         self.results_csv = os.path.join(self.results_dir, "results.csv")
@@ -161,7 +161,7 @@ class Trainer():
         if not os.path.exists(self.results_csv):
             with open(self.results_csv, mode="w+", newline="") as file:
                 writer = csv.writer(file)
-                headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate", "Precision", "Recall", "F1", "Accuracy", "IoU"]
+                headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate", "IoU", "Dice", "Precision", "Recall" "Accuracy",  "mAP", "mIoU"]
                 writer.writerow(headers)       
                       
     def _log_results_to_csv(self, epoch, train_loss, val_loss):
@@ -309,12 +309,24 @@ class Trainer():
         metrics_results = defaultdict()
         
         tp, fp, fn, tn = smp.metrics.get_stats(all_outputs, all_targets, mode="binary", threshold=0.5)
-        metrics_results["iou"]=smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro" ).item()
-        metrics_results["f1"] = smp.metrics.f1_score(tp, tn, fn ,tn, reduction="micro").item()
-        metrics_results["precision"]= smp.metrics.precision(tp, fp, fn, tn, reduction="micro").item()
+        print("DEBUG: get_stats output:")
+        print(f"  TP: {tp.sum().item()}, FP: {fp.sum().item()}, FN: {fn.sum().item()}, TN: {tn.sum().item()}")
+        
+        metrics_results["iou"]= smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro" ).item()
+        metrics_results["dice"] = smp.metrics.f1_score(tp, tn, fn ,tn, reduction="micro").item()
+        metrics_results["precision"] = smp.metrics.precision(tp, fp, fn, tn, reduction="micro").item()
         metrics_results["recall"]= smp.metrics.recall(tp, fp, fn, tn, reduction="micro").item()
         metrics_results["accuracy"] = smp.metrics.accuracy(tp, fp, fn, tn, reduction="micro").item()
-
+        metrics_results["mAP"] = average_precision_score(all_targets.numpy().flatten(), all_outputs.numpy().flatten())
+        
+        
+        thresholds = [0.1, 0.3, 0.5, 0.7, 0.9]
+        metrics_results["miou"] = 0
+        for threshold in thresholds:
+            tp, fp, fn, tn = smp.metrics.get_stats(all_outputs, all_targets, mode="binary", threshold=threshold)
+            metrics_results["miou"] += smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro" ).item()
+        metrics_results["miou"] /= len(thresholds)
+            
             
         # metrics_results = self.metrics.calculate_metrics(all_outputs, all_targets)
         val_loss /= len(self.val_loader)
@@ -348,7 +360,7 @@ class Trainer():
                 self.writer.add_scalar(f"Metrics/{name}", result, epoch)
 
             if self.verbose:
-                print(f'\nEpoch {epoch+1}/{self.epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f} - P: {self.metrics["precision"]:.4f} - R: {self.metrics["recall"]:.4f} - Acc: {self.metrics["accuracy"]:.4f} - F1: {self.metrics["f1"]:.4f} - IoU: {self.metrics["iou"]:.4f}')
+                print(f'\nEpoch {epoch+1}/{self.epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f} - mIoU: {self.metrics["miou"]:.4f} - IoU: {self.metrics["iou"]:.4f} - mAP: {self.metrics["mAP"]:.4f} - Acc: {self.metrics["accuracy"]:.4f} - Dice: {self.metrics["dice"]:.4f}')
             self._log_results_to_csv(epoch+1, train_loss, val_loss)
             
 
@@ -534,7 +546,7 @@ class Trainer():
         
         try:
             output_path = os.path.join(self.image_evolution_dir, "evolution.gif")
-            imageio.mimsave(output_path, images, fps=4/self.epochs, loop=1,)
+            imageio.mimsave(output_path, images, fps=self.epochs/4, loop=1,)
         except:
             print(f"Error creating animation: {e}")        
                         

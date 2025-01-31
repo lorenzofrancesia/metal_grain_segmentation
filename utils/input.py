@@ -27,6 +27,7 @@ def get_args_train():
     parser.add_argument('--optimizer', type=str, default='Adam', help='Optimizer.')
     parser.add_argument('--lr', type=float, default=0.0001, help='Learning rate for optimizer.')
     parser.add_argument('--momentum', type=float, default=0.9, help='Momentum for optimizer if supported.')
+    parser.add_argument('--weight_decay', type=float, default=0, help='Weight decay for optimizer if supported.')
     
     # Scheduler parameters
     parser.add_argument('--scheduler', type=str, default=None, help='Scheduler.')
@@ -35,6 +36,8 @@ def get_args_train():
     parser.add_argument('--iterations', type=int, default=10, help='Iterations for LinearLR.')
     parser.add_argument('--t_max', type=int, default=10, help='T-max for CosineAnnealing.')
     parser.add_argument('--eta_min', type=float, default=0, help='Eta-min for CosineAnnealing.')
+    parser.add_argument('--step_size', type=int, default=5, help='Step size for StepLR.')
+    parser.add_argument('--gamma_lr', type=float, default=0.5, help='Gamma for StepLR.')
 
     # Loss function parameters
     parser.add_argument('--loss_function', type=str, default='FocalTversky', help='Loss Function.')
@@ -144,11 +147,11 @@ def get_optimizer(args, model):
     try:
         if args.optimizer == "Adam":
             
-            optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(args.momentum, 0.999))
+            optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(args.momentum, 0.999), weight_decay=args.weight_decay)
         
         elif args.optimizer == "SGD":
             
-            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
+            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
             
         else:
             raise ValueError('Optimizer type not recognized')
@@ -171,6 +174,10 @@ def get_scheduler(args, optimizer):
     elif args.scheduler == "CosineAnnealingLR":
         
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.t_max, eta_min=args.eta_min)
+        
+    elif args.scheduler == "StepLR":
+        
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=args.gamma_lr)
         
     else:
         raise ValueError('Scheduler type not recognized')

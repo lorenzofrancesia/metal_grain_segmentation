@@ -133,6 +133,7 @@ class ModeltrainingGUI:
         self.optimizer_var = tk.StringVar(value="Adam")
         self.lr_var = tk.StringVar(value="0.001")
         self.momentum_var = tk.StringVar(value="0.9")
+        self.weight_decay_var = tk.StringVar(value="1e-4")
 
         self.scheduler_var = tk.StringVar(value="None")
         self.start_factor_var = tk.StringVar(value="0.3")
@@ -140,6 +141,8 @@ class ModeltrainingGUI:
         self.iterations_var = tk.StringVar(value="10")
         self.t_max_var = tk.StringVar(value="10")
         self.eta_min_var = tk.StringVar(value="0")
+        self.step_size_var = tk.StringVar(value="5")
+        self.gamma_lr_var = tk.StringVar(value="0.5")
 
         self.loss_func_var = tk.StringVar(value="FocalTversky")
         self.alpha_var = tk.StringVar(value="0.7")
@@ -202,12 +205,15 @@ class ModeltrainingGUI:
             "optimizer": self.optimizer_var.get(),
             "lr": self.lr_var.get(),
             "momentum": self.momentum_var.get(),
+            "weight_decay": self.weight_decay_var.get(),
             "scheduler": self.scheduler_var.get(),
             "start_factor": self.start_factor_var.get(),
             "end_factor": self.end_factor_var.get(),
             "iterations": self.iterations_var.get(),
             "t_max": self.t_max_var.get(),
             "eta_min": self.eta_min_var.get(),
+            "step_size": self.step_size_var.get(),
+            "gamma_lr": self.gamma_lr_var.get(),
             "loss_func": self.loss_func_var.get(),
             "alpha": self.alpha_var.get(),
             "beta": self.beta_var.get(),
@@ -240,12 +246,15 @@ class ModeltrainingGUI:
                 self.optimizer_var.set(config.get("optimizer", ""))
                 self.lr_var.set(config.get("lr", ""))
                 self.momentum_var.set(config.get("momentum", ""))
+                self.weight_decay_var.set(config.get("weight_decay", ""))
                 self.scheduler_var.set(config.get("scheduler", ""))
                 self.start_factor_var.set(config.get("start_factor", ""))
                 self.end_factor_var.set(config.get("end_factor", ""))
                 self.iterations_var.set(config.get("iterations", ""))
                 self.t_max_var.set(config.get("t_max", ""))
                 self.eta_min_var.set(config.get("eta_min", ""))
+                self.step_size_var.set(config.get("step_size", ""))
+                self.gamma_lr_var.set(config.get("gamma_lr", ""))
                 self.loss_func_var.set(config.get("loss_func", ""))
                 self.alpha_var.set(config.get("alpha", ""))
                 self.beta_var.set(config.get("beta", ""))
@@ -278,11 +287,20 @@ class ModeltrainingGUI:
 
             ctk.CTkLabel(self.optimizer_options_frame, text="Momentum").grid(row=1, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkEntry(self.optimizer_options_frame, textvariable=self.momentum_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+            
+            ctk.CTkLabel(self.optimizer_options_frame, text="Weight Decay").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(self.optimizer_options_frame, textvariable=self.weight_decay_var).grid(row=2, column=1, sticky="w", padx=5, pady=5)
 
         elif self.optimizer_var.get() == "SGD":
             ctk.CTkLabel(self.optimizer_options_frame, text="Learning Rate").grid(row=0, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkEntry(self.optimizer_options_frame, textvariable=self.lr_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
-
+            
+            ctk.CTkLabel(self.optimizer_options_frame, text="Momentum").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(self.optimizer_options_frame, textvariable=self.momentum_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+            
+            ctk.CTkLabel(self.optimizer_options_frame, text="Weight Decay").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(self.optimizer_options_frame, textvariable=self.weight_decay_var).grid(row=2, column=1, sticky="w", padx=5, pady=5)
+            
     def update_scheduler_options(self, *args):
         for widget in self.scheduler_options_frame.winfo_children():
             widget.destroy()
@@ -303,6 +321,13 @@ class ModeltrainingGUI:
 
             ctk.CTkLabel(self.scheduler_options_frame, text="Eta min").grid(row=1, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkEntry(self.scheduler_options_frame, textvariable=self.eta_min_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+            
+        elif self.scheduler_var.get() == "StepLR":
+            ctk.CTkLabel(self.scheduler_options_frame, text="Step Size").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(self.scheduler_options_frame, textvariable=self.step_size_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+
+            ctk.CTkLabel(self.scheduler_options_frame, text="Gamma").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(self.scheduler_options_frame, textvariable=self.gamma_lr_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
         else:
             ctk.CTkLabel(self.scheduler_options_frame, text="No options for selected scheduler").grid(row=0, column=0, columnspan=3, sticky="e", padx=5, pady=5)
@@ -419,6 +444,7 @@ class ModeltrainingGUI:
         # Scheduler selection and dropdown
         ctk.CTkLabel(left_frame, text="Scheduler").grid(row=6, column=0, sticky="e", padx=5, pady=5)
         scheduler_dropdown = ctk.CTkComboBox(left_frame, values=["None",
+                                                                 "StepLR",
                                                                  "LinearLR",
                                                                  "CosineAnnealingLR"], variable=self.scheduler_var).grid(row=6, column=1, sticky="e", padx=5, pady=5)
         self.scheduler_options_frame = ctk.CTkFrame(left_frame)
@@ -567,6 +593,7 @@ class ModeltrainingGUI:
             optimizer = self.optimizer_var.get()
             lr = float(self.lr_var.get())
             momentum = self.momentum_var.get()
+            weight_decay = self.weight_decay_var.get()
 
             scheduler = self.scheduler_var.get()
             start_factor = self.start_factor_var.get()
@@ -574,6 +601,8 @@ class ModeltrainingGUI:
             iterations = self.iterations_var.get()
             t_max = self.t_max_var.get()
             eta_min = self.eta_min_var.get()
+            step_size = self.step_size_var.get()
+            gamma_lr = self.gamma_lr_var.get()
 
             loss_func = self.loss_func_var.get()
             alpha = self.alpha_var.get()
@@ -591,36 +620,44 @@ class ModeltrainingGUI:
 
             # Construct the command
             args = ["python", "train.py"]  # Replace with your script name
-            args.extend(["--data_dir", data_dir])
-            args.extend(["--batch_size", str(batch_size)])
-            args.extend(["--epochs", str(epochs)])
-            args.extend(["--lr", str(lr)])
             args.extend(["--model", model])
-            args.extend(["--output_dir", output_dir])
-
-            # Add other inputs from the GUI
             args.extend(["--dropout", str(dropout)])
             args.extend(["--pooling", pooling])
+            
             args.extend(["--encoder", encoder])
+            if pretrained_weights:
+                args.append("--weights")
+            
             args.extend(["--optimizer", optimizer])
+            args.extend(["--lr", str(lr)])
             args.extend(["--momentum", str(momentum)])
+            args.extend(["--weight_decay", weight_decay])
+            
             args.extend(["--scheduler", scheduler])
             args.extend(["--start_factor", str(start_factor)])
             args.extend(["--end_factor", str(end_factor)])
             args.extend(["--iterations", str(iterations)])
             args.extend(["--t_max", str(t_max)])
             args.extend(["--eta_min", str(eta_min)])
+            args.extend(["--step_size", str(step_size)])
+            args.extend(["--gamma_lr", str(gamma_lr)])
+            
             args.extend(["--loss_func", loss_func])
             args.extend(["--alpha", str(alpha)])
             args.extend(["--beta", str(beta)])
             args.extend(["--gamma", str(gamma)])
-            args.extend(["--transform", str(transform)])
+            
+            args.extend(["--batch_size", str(batch_size)])
+            args.extend(["--epochs", str(epochs)])
+            
+            args.extend(["--data_dir", data_dir])
+            args.extend(["--output_dir", output_dir])
 
+            args.extend(["--transform", str(transform)])
             if normalize:
                 args.append("--normalize")
 
-            if pretrained_weights:
-                args.append("--weights")
+
 
             self.message_queue.put(f"Starting training with arguments: {' '.join(args)}") #debug
             # self.message_queue.put("Current Working Directory: " + os.getcwd()) #debug
