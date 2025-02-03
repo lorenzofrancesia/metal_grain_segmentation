@@ -189,10 +189,14 @@ class PlotView(ctk.CTkTabview):
         self.image_dir = None  # Directory to watch for images
         self.current_image_index = 0  # Index of the currently displayed image
         self.image_files = []  # List of image files in the directory
-        
-        # --- Dataset Tab Setup ---
-        self.dataset_frame = ctk.CTkScrollableFrame(self.tab("Dataset"), label_text="Images and Masks")
-        self.dataset_frame.grid(row=0, column=0, sticky="nsew")
+
+        # --- Dataset Tab Setup (using matplotlib) ---
+        self.dataset_figure = Figure(figsize=(6, 5), dpi=100) # Increased figure size for text
+        self.dataset_ax = self.dataset_figure.add_subplot(111) # Initialize axes for dataset images
+        self.dataset_canvas = FigureCanvasTkAgg(self.dataset_figure, master=self.tab("Dataset"))
+        self.dataset_canvas.draw()
+        self.dataset_canvas_widget = self.dataset_canvas.get_tk_widget() # Store the widget
+        self.dataset_canvas_widget.grid(row=0, column=0, sticky="nsew") # Grid place the widget
 
         # Configure grid weights for resizing
         self.tab("Losses").grid_rowconfigure(0, weight=1)
@@ -301,54 +305,54 @@ class PlotView(ctk.CTkTabview):
         self.image_ax.set_title("Image Evolution")
         self.image_ax.axis("off")
         self.image_canvas.draw()
-        
+
     def reset_image_data(self):
         """Resets image-related data for a new training session."""
         self.image_dir = None
         self.current_image_index = 0
         self.image_files = []
         self.clear_plots()
-        
-    def visualize_dataset(self, dataset, num_samples=6):
-        """Visualizes dataset samples in the Dataset tab."""
+
+    def visualize_dataset(self, dataset, idx=None):
+        """Visualizes dataset samples in the Dataset tab using matplotlib, showing both image and mask."""
         self.switch_to_tab("Dataset")
-        self.clear_dataset_frame()
+        self.dataset_ax.clear()  # Clear the *single* axes we were using before
 
-        for i in range(num_samples):
-            image, mask = dataset[i]
-            image_np = image.permute(1, 2, 0).numpy() if isinstance(image, torch.Tensor) else image
-            mask_np = mask.squeeze().numpy() if isinstance(mask, torch.Tensor) else mask
+        # Create subplots - now we need 2 axes within the dataset_figure
+        self.dataset_figure.clf() # Clear the entire figure to reset subplots
+        image_ax = self.dataset_figure.add_subplot(1, 2, 1)  # 1 row, 2 columns, first subplot for image
+        mask_ax = self.dataset_figure.add_subplot(1, 2, 2)   # 1 row, 2 columns, second subplot for mask
 
-            if image_np.max() > 1:
-                image_np = image_np / image_np.max()
+        if idx is None:
+            idx = np.random.randint(0, len(dataset))
+        image, mask = dataset[idx]
 
-            image_label = ctk.CTkLabel(self.dataset_frame, text=f"Image {i + 1}", font=("Arial", 12, "bold"))
-            image_label.grid(row=2 * i, column=0, padx=5, pady=5, sticky="w")
+        image_np = image.permute(1, 2, 0).numpy() if isinstance(image, torch.Tensor) else image
+        mask_np = mask.squeeze().numpy() if isinstance(mask, torch.Tensor) else mask
 
-            image_ctk = ctk.CTkImage(light_image=Image.fromarray((image_np * 255).astype(np.uint8)),
-                                     dark_image=Image.fromarray((image_np * 255).astype(np.uint8)),
-                                     size=(128, 128))
-            image_ctk_label = ctk.CTkLabel(self.dataset_frame, image=image_ctk, text="")
-            image_ctk_label.grid(row=2 * i + 1, column=0, padx=5, pady=5)
+        if image_np.max() > 1:
+            image_np = image_np / image_np.max()
 
-            mask_label = ctk.CTkLabel(self.dataset_frame, text=f"Mask {i + 1}", font=("Arial", 12, "bold"))
-            mask_label.grid(row=2 * i, column=1, padx=5, pady=5, sticky="w")
+        # Display Image in the first subplot
+        image_ax.imshow(image_np)
+        image_ax.set_title(f"Image - Index: {idx}")
+        image_ax.axis('off')
 
-            mask_ctk = ctk.CTkImage(light_image=Image.fromarray((mask_np * 255).astype(np.uint8)),
-                                    dark_image=Image.fromarray((mask_np * 255).astype(np.uint8)),
-                                    size=(128, 128))
-            mask_ctk_label = ctk.CTkLabel(self.dataset_frame, image=mask_ctk, text="")
-            mask_ctk_label.grid(row=2 * i + 1, column=1, padx=5, pady=5)
+        # Display Mask in the second subplot
+        mask_ax.imshow(mask_np, cmap='jet')  # Use 'jet' or another suitable colormap for masks
+        mask_ax.set_title(f"Mask - Index: {idx}")
+        mask_ax.axis('off')
 
-    def clear_dataset_frame(self):
-        """Clears all widgets from the dataset frame."""
-        for widget in self.dataset_frame.winfo_children():
-            widget.destroy()
+        self.dataset_figure.tight_layout() # Adjust layout to prevent overlap
+        self.dataset_canvas.draw()  # Update the canvas
 
     def class_distribution(self, dataset, classes_names=['Background', 'Foreground']):
-        """Calculates and plots the class distribution in the Dataset tab."""
+        """Calculates and plots the class distribution with percentages in the Dataset tab using matplotlib."""
         self.switch_to_tab("Dataset")
-        self.clear_dataset_frame()
+        self.dataset_ax.clear()
+        self.dataset_figure.clf()  # Clear the entire figure
+        ax = self.dataset_figure.add_subplot(111)  # Add a single subplot
+
         total_pixels = 0
         foreground_pixels = 0
 
@@ -362,27 +366,26 @@ class PlotView(ctk.CTkTabview):
         counts = [background_pixels, foreground_pixels]
         percentages = [background_pixels / total_pixels * 100, foreground_pixels / total_pixels * 100]
 
-        # Create a new figure and axes for the class distribution plot
-        fig, ax = plt.subplots(figsize=(5, 4), dpi=100)
         bars = ax.bar(classes_names, counts, color=['blue', 'orange'])
         ax.set_ylabel('Pixel Count')
         ax.set_title('Class Distribution')
 
+        # Add percentage labels on top of each bar
         for bar, percentage in zip(bars, percentages):
             height = bar.get_height()
             ax.text(bar.get_x() + bar.get_width() / 2, height, f"{percentage:.2f}%",
-                    ha="center", va="bottom", fontsize=10, color="black")
+                    ha="center", va="bottom", fontsize=10, color="white") # Changed color to white for better visibility on dark background
 
-        # Embed the new figure in the dataset frame
-        canvas = FigureCanvasTkAgg(fig, master=self.dataset_frame)
-        canvas_widget = canvas.get_tk_widget()
-        canvas_widget.pack(side=ctk.TOP, fill=ctk.BOTH, expand=True)
-        canvas.draw()
+        self.dataset_figure.tight_layout()
+        self.dataset_canvas.draw()
 
     def visualize_overlay(self, dataset, idx=None, alpha=0.5):
-        """Visualizes the overlay of an image and its mask in the Image Evolution tab."""
+        """Visualizes the overlay of an image and its mask in the Dataset tab using matplotlib."""
         self.switch_to_tab("Dataset")
-        self.clear_dataset_frame()
+        self.dataset_ax.clear()
+        self.dataset_figure.clf() # Clear the entire figure
+        ax = self.dataset_figure.add_subplot(111) # Add a single subplot
+
         if idx is None:
             idx = np.random.randint(0, len(dataset))
 
@@ -391,57 +394,44 @@ class PlotView(ctk.CTkTabview):
         if image.dtype != np.uint8:
             image = (image * 255).astype(np.uint8)
 
-        # Create a new figure and axes for the overlay plot
-        fig, ax = plt.subplots(figsize=(5, 4), dpi=100)
         ax.imshow(image, alpha=1.0)
         ax.imshow(mask.squeeze(0), cmap="jet", alpha=alpha)
         ax.axis("off")
         ax.set_title(f"Overlay of Image and Mask [Index: {idx}]")
 
-        # Embed the new figure in the dataset frame
-        canvas = FigureCanvasTkAgg(fig, master=self.dataset_frame)
-        canvas_widget = canvas.get_tk_widget()
-        canvas_widget.pack(side=ctk.TOP, fill=ctk.BOTH, expand=True)
-        canvas.draw()
+        self.dataset_figure.tight_layout()
+        self.dataset_canvas.draw()
 
-    def image_histogram(self, image):
-        """Calculates and plots the histogram of pixel values in an image on the Dataset tab."""
+    def image_histogram(self, dataset, idx=None):
+        """Calculates and plots the histogram of pixel values in an image on the Dataset tab using matplotlib."""
         self.switch_to_tab("Dataset")
-        self.clear_dataset_frame()
-        if isinstance(image, torch.Tensor):
-            image = image.permute(1, 2, 0).numpy()
+        self.dataset_ax.clear()
+        self.dataset_figure.clf() # Clear the entire figure
+        ax = self.dataset_figure.add_subplot(111) # Add a single subplot
+        if idx is None:
+            idx = np.random.randint(0, len(dataset))
+
+        image, mask = dataset[idx]
+        image = image.permute(1, 2, 0).numpy() if isinstance(image, torch.Tensor) else image
         if image.dtype != np.uint8:
             image = (image * 255).astype(np.uint8)
 
         pixel_values = image.flatten()
 
-        # Create a new figure and axes for the histogram plot
-        fig, ax = plt.subplots(figsize=(5, 4), dpi=100)
         ax.hist(pixel_values, bins=256, range=(0, 256), color='blue', alpha=0.7)
         ax.set_xlabel('Pixel Value')
         ax.set_ylabel('Frequency')
         ax.set_title('Histogram of Pixel Values')
 
-        # Embed the new figure in the dataset frame
-        canvas = FigureCanvasTkAgg(fig, master=self.dataset_frame)
-        canvas_widget = canvas.get_tk_widget()
-        canvas_widget.pack(side=ctk.TOP, fill=ctk.BOTH, expand=True)
-        canvas.draw()
+        self.dataset_figure.tight_layout()
+        self.dataset_canvas.draw()
 
-    def inspect(self, dataset):
-        """Logs basic information about the dataset images and masks in the Dataset tab."""
-        self.switch_to_tab("Dataset")
-        self.clear_dataset_frame()
-        info = ""
-        for i in range(min(5, len(dataset))):
-            image, mask = dataset[i]
-            info += f"Image {i+1}: Shape - {image.shape}, Min/Max - ({image.min()}, {image.max()})\n"
-            info += f"Mask {i+1}: Shape - {mask.shape}, Unique Values - {torch.unique(mask)}\n"
-
-        # Create a text widget to display the information
-        text_widget = ctk.CTkTextbox(self.dataset_frame, wrap=tk.WORD, height=10, width=30)
-        text_widget.insert(tk.END, info)
-        text_widget.pack(side=ctk.TOP, fill=ctk.BOTH, expand=True)
+    def clear_dataset_frame(self):
+        """Clears ONLY the matplotlib plot area in Dataset tab."""
+        self.dataset_ax.clear()  # Clear matplotlib axes
+        self.dataset_figure.clf() # Clear matplotlib figure
+        self.dataset_ax.set_facecolor('black') # Keep black background
+        self.dataset_ax.axis("off") # Ensure axes are off
 
     def switch_to_tab(self, tab_name):
         """Switches the view to the specified tab."""
@@ -506,6 +496,9 @@ class ModeltrainingGUI:
         self.test_data_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\data")
         self.test_batch_size_var = tk.StringVar(value="6")
         self.test_normalize_var = tk.BooleanVar(value=False)
+        
+        # Dataset tab index entry
+        self.dataset_index_var = tk.StringVar() # Variable to store index input
         
 
     def validate_numeric_input(self, new_value):
@@ -1017,8 +1010,8 @@ class ModeltrainingGUI:
         container_frame.pack(fill=tk.BOTH, expand=True)
 
         left_frame = ctk.CTkScrollableFrame(container_frame, width=300)
-        left_frame.pack(fill=tk.BOTH, expand=True)
-        
+        left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
         # Dataset Directory Selection
         ctk.CTkLabel(left_frame, text="Dataset Dir").grid(row=0, column=0, sticky="e", padx=5, pady=5)
         dataset_dir_entry = ctk.CTkEntry(left_frame, textvariable=self.data_dir_var)
@@ -1026,23 +1019,26 @@ class ModeltrainingGUI:
         browse_button = ctk.CTkButton(left_frame, text="...", width=30, command=lambda entry=dataset_dir_entry: self.browse_dir(entry))
         browse_button.grid(row=0, column=2, sticky="w", padx=5, pady=5)
 
+        # Index Input
+        ctk.CTkLabel(left_frame, text="Index:").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        index_entry = ctk.CTkEntry(left_frame, textvariable=self.dataset_index_var, width=50)
+        index_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+
         # Visualization Buttons
         button_width = 20  # Adjust button width as needed
 
         visualize_button = ctk.CTkButton(left_frame, text="Visualize Dataset", width=button_width, command=self.visualize_dataset_clicked)
-        visualize_button.grid(row=1, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        visualize_button.grid(row=2, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
 
         class_dist_button = ctk.CTkButton(left_frame, text="Class Distribution", width=button_width, command=self.class_distribution_clicked)
-        class_dist_button.grid(row=2, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        class_dist_button.grid(row=3, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
 
         overlay_button = ctk.CTkButton(left_frame, text="Visualize Overlay", width=button_width, command=self.visualize_overlay_clicked)
-        overlay_button.grid(row=3, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        overlay_button.grid(row=4, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
 
         histogram_button = ctk.CTkButton(left_frame, text="Image Histogram", width=button_width, command=self.image_histogram_clicked)
-        histogram_button.grid(row=4, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        histogram_button.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
 
-        inspect_button = ctk.CTkButton(left_frame, text="Inspect Dataset", width=button_width, command=self.inspect_dataset_clicked)
-        inspect_button.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
     
     def visualize_dataset_clicked(self):
         self.load_and_visualize("visualize_dataset")
@@ -1056,7 +1052,7 @@ class ModeltrainingGUI:
     def image_histogram_clicked(self):
         self.load_and_visualize("image_histogram")
 
-    def inspect_dataset_clicked(self):
+    def inspect_dataset_clicked(self): # No longer used, remove button from create_dataset_tab too
         self.load_and_visualize("inspect")
 
     def load_and_visualize(self, visualization_type):
@@ -1080,18 +1076,30 @@ class ModeltrainingGUI:
 
         try:
             dataset = SegmentationDataset(image_dir, mask_dir, image_transform=transform, mask_transform=transform)
+            index_str = self.dataset_index_var.get()
+            index = None # Default index is None, for random selection
+
+            if index_str:
+                try:
+                    index = int(index_str)
+                    if not 0 <= index < len(dataset):
+                        messagebox.showerror("Error", f"Index out of range. Dataset size: {len(dataset)}.")
+                        return
+                except ValueError:
+                    messagebox.showerror("Error", "Invalid index. Please enter an integer.")
+                    return
+
             if visualization_type == "visualize_dataset":
-                self.plot_panel.visualize_dataset(dataset)
+                self.plot_panel.visualize_dataset(dataset, idx=index) # Pass index
             elif visualization_type == "class_distribution":
                 self.plot_panel.class_distribution(dataset)
             elif visualization_type == "visualize_overlay":
-                self.plot_panel.visualize_overlay(dataset)
+                self.plot_panel.visualize_overlay(dataset, idx=index) # Pass index
             elif visualization_type == "image_histogram":
-                idx = np.random.randint(0, len(dataset))
-                image, _ = dataset[idx]
-                self.plot_panel.image_histogram(image)
+                self.plot_panel.image_histogram(dataset, idx=index) # Pass index
             elif visualization_type == "inspect":
-                self.plot_panel.inspect(dataset)
+                self.plot_panel.inspect(dataset) # No index for inspect
+
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load or visualize dataset: {e}")
     

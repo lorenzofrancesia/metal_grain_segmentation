@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 class DiceLoss(nn.Module):
     
-    def __init__(self, weight=None, size_average=None):
+    def __init__(self):
         super(DiceLoss, self).__init__()
         
     def forward(self, inputs, targets, smooth=1):
@@ -25,7 +25,7 @@ class DiceLoss(nn.Module):
 
 class LCDiceLoss(nn.Module):
     
-    def __init__(self, weight=None, size_average=None):
+    def __init__(self):
         super(LCDiceLoss, self).__init__()
         
     def forward(self, inputs, targets, smooth=1):
