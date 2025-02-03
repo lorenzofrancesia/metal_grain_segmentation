@@ -17,7 +17,6 @@ import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
 import segmentation_models_pytorch as smp
 
-from utils.metrics import BinaryMetrics
 from data.dataset import SegmentationDataset
 
 class Trainer():
@@ -34,8 +33,8 @@ class Trainer():
                  lr_scheduler=None,
                  epochs=10,
                  output_dir="../runs",
-                 resume=False,
-                 resume_model_path=None,
+                #  resume=False,
+                #  resume_model_path=None,
                  early_stopping=50,
                  verbose=True, 
                  config=None
@@ -53,9 +52,9 @@ class Trainer():
         self.batch_size = batch_size
         self.normalize = normalize
         
-        # Resume
-        self.resume = resume
-        self.resume_model_path = resume_model_path
+        # # Resume
+        # self.resume = resume
+        # self.resume_model_path = resume_model_path
         
         # Training parameters 
         self.epochs = epochs
@@ -85,8 +84,8 @@ class Trainer():
         
         self.model.to(self.device)
 
-        if self.resume:
-            self._load_checkpoint()   
+        # if self.resume:
+        #     self._load_checkpoint()   
 
     def _initialize_output_folder(self):
         
@@ -113,7 +112,6 @@ class Trainer():
         config_file  = {
             "Model Parameters:" : {
                 "model" : self.config.model,
-                "dropout" : self.config.dropout
             },
             "Encoder Parameters:" : {
                 "encoder" : self.config.encoder,
@@ -121,8 +119,9 @@ class Trainer():
             },
             "Optimizer Parameters:" : {
                 "optimizer" : self.config.encoder,
-                "lr" : self.config.weights,
-                "momentum" : self.config.momentum
+                "lr" : self.config.lr,
+                "momentum" : self.config.momentum,
+                "weight_decay" : self.config.weight_decay
             },
             "Scheduler Parameters:" : {
                 "scheduler" : self.config.scheduler,
@@ -130,13 +129,19 @@ class Trainer():
                 "end_factor" : self.config.end_factor,
                 "iterations" : self.config.iterations,
                 "t_max" : self.config.t_max,
-                "eta_min" : self.config.eta_min
+                "eta_min" : self.config.eta_min,
+                "step_size" : self.config.step_size,
+                "gamma_lr" : self.config.gamma_lr
             },
             "Loss Function Parameters:" : {
                 "loss_function" : self.config.loss_function,
                 "alpha" : self.config.alpha,
                 "beta" : self.config.beta,
-                "gamma" : self.config.gamma
+                "gamma" : self.config.gamma,
+                "loss_function1" : self.config.loss_function1,
+                "loss_function1_weight" : self.config.loss_function1_weight,
+                "loss_function2" : self.config.loss_function2,
+                "loss_function2" : self.config.loss_function2_weight,
             },
             "Directories:" : {
                 "data_dir" : self.config.data_dir,
@@ -208,17 +213,19 @@ class Trainer():
     
     def _load_checkpoint(self):
         
-        if not self.resume_model_path:
-            raise ValueError("Provide path to the checkpoint")
-        checkpoint = torch.load(self.resume_path)
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.current_epoch = checkpoint['current_epoch']
-        self.global_step = checkpoint['global_step']
-        if self.lr_scheduler and checkpoint['lr_scheduler']:
-            self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
-        if self.verbose:
-            print(f'Loaded checkpoint from {self.resume_path}')
+        # if not self.resume_model_path:
+        #     raise ValueError("Provide path to the checkpoint")
+        # checkpoint = torch.load(self.resume_path)
+        # self.model.load_state_dict(checkpoint['model_state_dict'])
+        # self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        # self.current_epoch = checkpoint['current_epoch']
+        # self.global_step = checkpoint['global_step']
+        # if self.lr_scheduler and checkpoint['lr_scheduler']:
+        #     self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+        # if self.verbose:
+        #     print(f'Loaded checkpoint from {self.resume_path}')
+        
+        return
     
     def _train_step(self, batch):
         self.model.train()
@@ -226,7 +233,7 @@ class Trainer():
         inputs, targets = inputs.to(self.device), targets.to(self.device)
     
         # Forward pass
-        outputs = self.model(inputs)[0]
+        outputs = self.model(inputs)
 
         outputs_probs = torch.sigmoid(outputs)     
         
@@ -255,7 +262,7 @@ class Trainer():
                 inputs, targets = batch
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
 
-                outputs = self.model(inputs)[0]
+                outputs = self.model(inputs)
                 outputs_probs = torch.sigmoid(outputs)
                 
                 targets = targets.long()
@@ -319,8 +326,6 @@ class Trainer():
         metrics_results = defaultdict()
         
         tp, fp, fn, tn = smp.metrics.get_stats(all_outputs, all_targets, mode="binary", threshold=0.5)
-        print("DEBUG: get_stats output:")
-        print(f"  TP: {tp.sum().item()}, FP: {fp.sum().item()}, FN: {fn.sum().item()}, TN: {tn.sum().item()}")
         
         metrics_results["iou"]= smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro" ).item()
         metrics_results["dice"] = smp.metrics.f1_score(tp, tn, fn ,tn, reduction="micro").item()
@@ -453,7 +458,7 @@ class Trainer():
                 inputs, targets = batch
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
 
-                outputs = self.model(inputs)[0]
+                outputs = self.model(inputs)
                 outputs_probs = torch.sigmoid(outputs)
                 
                 targets = targets.long()

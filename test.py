@@ -1,41 +1,26 @@
-from torch import optim
-import os
-
-from utils.metrics import BinaryMetrics
-from loss.tversky import TverskyLoss
-from utils.input import get_args_test, get_model
+from utils.input import get_args_test, get_model, get_loss_function, parse_transforms
 from utils.tester import Tester   
-import torchseg      
+
     
     
 def main():
     
     args = get_args_test()
     
+    model = get_model(args, test=True)
     
-    aux_params=dict(
-    pooling='max',             # one of 'avg', 'max'
-    dropout=0.5,               # dropout ratio, default is None
-    classes=4,                 # define number of output labels
-    )
+    loss_function = get_loss_function(args)
     
-    model = torchseg.Unet(
-        encoder_name="resnet34",        # choose encoder, e.g. mobilenet_v2 or efficientnet-b7
-        encoder_weights="imagenet",     # use `imagenet` pre-trained weights for encoder initialization
-        in_channels=3,  
-        aux_params=aux_params           # model input channels (1 for gray-scale images, 3 for RGB, etc.)
-        )
-    
-    
+    transform = parse_transforms(args.transform)
 
-    loss_function = TverskyLoss()
     tester = Tester(
         model=model,
         model_path=args.model_path,
         data_dir=args.data_dir,
         batch_size=args.batch_size,
         loss_function=loss_function,
-        normalize=args.normalize
+        normalize=args.normalize, 
+        test_transform = transform
     )
     
     tester.test()

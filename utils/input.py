@@ -16,8 +16,8 @@ def get_args_train():
     
     # Model parameters 
     parser.add_argument('--model', type=str, default='Unet', help='Model to train')
-    parser.add_argument("--dropout", type=float, default=0, help='Dropout probability.')
-    parser.add_argument("--pooling",  type=str, default='max', help='Type of pooling used.')
+    # parser.add_argument("--dropout", type=float, default=0, help='Dropout probability.')
+    # parser.add_argument("--pooling",  type=str, default='max', help='Type of pooling used.')
     
     # Encoder parameters
     parser.add_argument('--encoder', type=str, default='resnet152', help='Model to train.')
@@ -62,18 +62,21 @@ def get_args_train():
     parser.add_argument("--normalize", default=False, action="store_true", help="Activate normalization.")
     parser.add_argument('--transform', type=str, default='transforms.ToTensor', help='Transform to apply to the dataset.')
     
-    # To implement
-    parser.add_argument("--resume", default=False, action="store_true", help="Resume traing from last model saved")
-    parser.add_argument('--checkpoint_path', type=str, default=None, help='Path to checkpoint for resuming training')
+    # # To implement
+    # parser.add_argument("--resume", default=False, action="store_true", help="Resume traing from last model saved")
+    # parser.add_argument('--checkpoint_path', type=str, default=None, help='Path to checkpoint for resuming training')
 
     
     return parser.parse_args()
 
 
 
-def get_model(args, aux_params=None):
-
-    weights = "imagenet" if bool(args.weights) else None
+def get_model(args, aux_params=None, test=False):
+    
+    if not test:
+        weights = "imagenet" if bool(args.weights) else None
+    else:
+        weights = None
         
     try:
         if args.model == 'U-Net' or args.model == 'Unet':
@@ -234,10 +237,24 @@ def get_args_test():
     
     parser = argparse.ArgumentParser(description='Test a U-Net model')
     parser.add_argument('--model', type=str, default='unet', help='Model for testing')
+    parser.add_argument('--encoder', type=str, default='resnet152', help='Model to train.')
     parser.add_argument('--model_path', type=str, help='Path to the model to test')
+    
+    # Loss function parameters
+    parser.add_argument('--loss_function', type=str, default='FocalTversky', help='Loss Function.')
+    parser.add_argument('--alpha', type=float, default=0.7, help='Alpha for FocalTversky and Tversky.')
+    parser.add_argument('--beta', type=float, default=0.3, help='Beta for FocalTversky and Tversky.')
+    parser.add_argument('--gamma', type=float, default=1.3333, help='Gamma for FocalTversky.')
+    
+    parser.add_argument('--loss_function1', type=str, default='FocalTversky', help='Loss Function 1 for combo loss.')
+    parser.add_argument('--loss_function1_weight', type=float, default=0.5, help='Weight of loss Function 1 for combo loss.')
+    parser.add_argument('--loss_function2', type=str, default='FocalTversky', help='Loss Function 2 for combo loss.')
+    parser.add_argument('--loss_function2_weight', type=float, default=0.5, help='Weight of loss Function 2 for combo loss.')
+    
     parser.add_argument('--data_dir', type=str, help='Directory containing the dataset')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size for testing')
     parser.add_argument("--normalize", default=False, action="store_true", help="Activate normalization")
+    parser.add_argument('--transform', type=str, default='transforms.ToTensor', help='Transform to apply to the dataset.')
     
     return parser.parse_args()
 

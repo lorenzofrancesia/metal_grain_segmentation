@@ -1,33 +1,34 @@
 import os
+import sys
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+from collections import defaultdict
+from sklearn.metrics import precision_recall_curve, average_precision_score
+from PIL import Image
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader # Unless I write my own data loader
 import torchvision.transforms as transforms
+import segmentation_models_pytorch as smp
 
-from utils.metrics import BinaryMetrics
 from data.dataset import SegmentationDataset, masked_image, image_for_plot
 
 class Tester():
     
     def __init__(self, 
                  data_dir,
-                 model=None,
-                 model_path=None,
+                 model,
+                 model_path,
                  normalize=False,
                  test_transform=transforms.ToTensor(),
                  loss_function=nn.BCELoss(),
-                 metrics=BinaryMetrics(),
                  device='cuda' if torch.cuda.is_available() else 'cpu',
-                 output_dir=None,
                  batch_size=8
                  ):
         
         self.model = model
         self.model_path = model_path
-        self.metrics = metrics
         self.device = device
         self.loss_function = loss_function
         
@@ -67,7 +68,7 @@ class Tester():
             normalize=self.normalize,
             )
         
-        self.test_loader = DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=True)
+        self.test_loader = DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False)
 
                 
     def test(self):
@@ -85,25 +86,46 @@ class Tester():
                 inputs, targets = batch
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
                 
-                outputs = self.model(inputs)[0]
+                outputs = self.model(inputs)
                 outputs_probs = torch.sigmoid(outputs)
                 
                 targets = targets.long()
                 
-                loss = self.loss_function(outputs_probs, targets)
+                if isinstance(self.loss_function, list):
+                    loss_func1, loss_func2, weight1, weight2 = self.loss_function
+                    loss = weight1 * loss_func1(outputs_probs, targets) + weight2 * loss_func2(outputs_probs, targets)
+                else:
+                    loss = self.loss_function(outputs_probs, targets)  
                 test_loss += loss.item()        
                 
-                outputs_binary = (outputs_probs > 0.5).long()
+                # outputs_binary = (outputs_probs > 0.5).long()
                 
                 self.all_inputs.append(inputs.clone().detach())
-                self.all_outputs.append(outputs_binary.clone().detach())
+                self.all_outputs.append(outputs_probs.clone().detach())
                 self.all_targets.append(targets.clone().detach())
         
         # Aggregate predicitions and targets
         all_outputs_cat = torch.cat(self.all_outputs, dim=0)
         all_targets_cat = torch.cat(self.all_targets, dim=0)
-                
-        metrics_results = self.metrics.calculate_metrics(all_outputs_cat, all_targets_cat)
+        
+        metrics_results = defaultdict()
+        
+        tp, fp, fn, tn = smp.metrics.get_stats(all_outputs_cat, all_targets_cat, mode="binary", threshold=0.5)
+        
+        metrics_results["iou"]= smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro" ).item()
+        metrics_results["dice"] = smp.metrics.f1_score(tp, tn, fn ,tn, reduction="micro").item()
+        metrics_results["precision"] = smp.metrics.precision(tp, fp, fn, tn, reduction="micro").item()
+        metrics_results["recall"]= smp.metrics.recall(tp, fp, fn, tn, reduction="micro").item()
+        metrics_results["accuracy"] = smp.metrics.accuracy(tp, fp, fn, tn, reduction="micro").item()
+        metrics_results["mAP"] = average_precision_score(all_targets_cat.numpy().flatten(), all_outputs_cat.numpy().flatten())
+        
+        thresholds = [0.1, 0.3, 0.5, 0.7, 0.9]
+        metrics_results["miou"] = 0
+        for threshold in thresholds:
+            tp, fp, fn, tn = smp.metrics.get_stats(all_outputs_cat, all_targets_cat, mode="binary", threshold=threshold)
+            metrics_results["miou"] += smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro" ).item()
+        metrics_results["miou"] /= len(thresholds)
+        
         test_loss /= len(self.test_loader)
         
         results = {'loss': test_loss, **metrics_results}

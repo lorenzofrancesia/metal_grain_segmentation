@@ -1,40 +1,19 @@
-from torch import optim
-from torchvision.transforms import transforms
-
-from utils.metrics import BinaryMetrics
-from loss.tversky import TverskyLoss
 from utils.input import get_args_train, get_model, get_optimizer, get_scheduler, get_loss_function, parse_transforms
 from utils.trainer import Trainer            
-    
-import torchseg
+
 
 
  
 def main():
     
-    args = get_args_train()
+    args = get_args_train()   
 
-    try:
-        dropout = args.dropout
-        if dropout == 0:
-            dropout = None
-    except AttributeError:
-        dropout = None
-        
-    aux_params=dict(
-        pooling=args.pooling,            
-        classes=1,
-        dropout=dropout
-        )       
-
-    model = get_model(args, aux_params=aux_params)
+    model = get_model(args)
 
     optimizer = get_optimizer(args, model=model)
     scheduler = get_scheduler(args, optimizer=optimizer)
     
     loss_function = get_loss_function(args)
-    print(loss_function)
-
     
     transform = parse_transforms(args.transform)
     

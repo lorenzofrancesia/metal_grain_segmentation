@@ -9,11 +9,18 @@ import queue
 import os
 import re
 import time
+from PIL import Image
+import torch
+from torchvision.transforms import transforms
+from data.dataset import SegmentationDataset
+import numpy as np
 
-import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use("TkAgg")
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+from matplotlib.figure import Figure
+from matplotlib.ticker import MaxNLocator, FuncFormatter
+import matplotlib.pyplot as plt
 
 class StringRedirector(object):
     def __init__(self, text_widget):
@@ -44,9 +51,11 @@ class TransformWidget(ctk.CTkFrame):
         self.table_frame.grid_columnconfigure(1, weight=1) # Key change here
 
         self.rows = []
+        self.add_row(default="transforms.Resize", default_size="(512,512)")
         self.add_row(default="transforms.ToTensor")
 
-    def add_row(self, default=None):
+
+    def add_row(self, default=None, default_size=None):
         row_frame = ctk.CTkFrame(self.table_frame)
         row_frame.pack(fill="x", padx=0, pady=2) # Remove padding here
         row_frame.grid_columnconfigure(1, weight=1)
@@ -63,10 +72,16 @@ class TransformWidget(ctk.CTkFrame):
         if default:
             dropdown.set(default)
 
-        resize_entry = ctk.CTkEntry(row_frame, placeholder_text="Enter size", width=50)
+        resize_entry = ctk.CTkEntry(row_frame, placeholder_text="Enter size", width=75)
         resize_entry.grid(row=0, column=2, padx=5)
-        resize_entry.grid_remove()  # Use grid_remove for cleaner hiding
-        resize_entry.configure(state="disabled")
+
+        if default == "transforms.Resize":
+             resize_entry.configure(state="normal")
+             if default_size:
+                resize_entry.insert(0, default_size)
+        else:
+            resize_entry.grid_remove()
+            resize_entry.configure(state="disabled")
 
         self.rows.append({"frame": row_frame, "dropdown": dropdown, "resize_entry": resize_entry, "delete_btn": delete_btn})
 
@@ -95,18 +110,342 @@ class TransformWidget(ctk.CTkFrame):
             else:
                 sequence.append(f"{transform}()")
         return sequence
+    
+    def load_config(self, config_string):
+        # Clear existing rows
+        for item in self.rows:
+            item["frame"].destroy()
+        self.rows = []
+
+        # Parse the config string
+        try:
+            # Ensure config_string is a string representation of a list
+            if isinstance(config_string, list):
+                config_string = str(config_string)  # Convert list to its string representation
+
+            transforms = eval(config_string)  # Use eval() with caution!
+            for transform_str in transforms:
+                match = re.match(r"(\w+\.\w+)\((.*)\)", transform_str)
+                if match:
+                    transform_name = match.group(1)
+                    if transform_name not in self.available_transforms:
+                        print(f"Warning: Transform '{transform_name}' is not in available_transforms.")
+                        continue
+
+                    if transform_name == "transforms.Resize":
+                        args_str = match.group(2)
+                        
+                        self.add_row(default=transform_name, default_size=args_str)
+                    else:
+                        self.add_row(default=transform_name)
+
+                else:
+                    print(f"Warning: Could not parse transform string: '{transform_str}'")
+
+        except (SyntaxError, ValueError, TypeError) as e:
+            print(f"Error: Invalid config string format: {e}")
 
 class PlotView(ctk.CTkTabview):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
 
-        # create tabs
+        # Set dark style for plots
+        plt.style.use('dark_background')
+
+        # Create tabs
         self.add("Losses")
         self.add("Image Evolution")
+        self.add("Dataset")
 
-        # add widgets on tabs
-        self.label = ctk.CTkLabel(master=self.tab("Image Evolution"))
-        self.label.grid(row=0, column=0, padx=20, pady=10)
+        # --- Losses Tab Setup ---
+        self.loss_figure = Figure(figsize=(5, 4), dpi=100)
+        self.loss_ax = self.loss_figure.add_subplot(111)
+        self.loss_canvas = FigureCanvasTkAgg(self.loss_figure, master=self.tab("Losses"))
+        self.loss_canvas.draw()
+        self.loss_canvas.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+
+        self.loss_data = []  # Store loss values
+
+        # --- Image Evolution Tab Setup ---
+        self.image_frame = ctk.CTkFrame(self.tab("Image Evolution"))
+        self.image_frame.grid(row=0, column=0, sticky="nsew")
+
+        self.image_figure = Figure(figsize=(5, 4), dpi=100)
+        self.image_ax = self.image_figure.add_subplot(111)
+        self.image_canvas = FigureCanvasTkAgg(self.image_figure, master=self.image_frame)
+        self.image_canvas.draw()
+        self.image_canvas.get_tk_widget().pack(side=ctk.TOP, fill=ctk.BOTH, expand=True)
+
+        # Navigation buttons
+        self.button_frame = ctk.CTkFrame(self.image_frame)
+        self.button_frame.pack(side=ctk.BOTTOM, fill=ctk.X)
+
+        self.prev_button = ctk.CTkButton(self.button_frame, text="< Prev", command=self.show_previous_image)
+        self.prev_button.pack(side=ctk.LEFT, padx=5, pady=5)
+
+        self.next_button = ctk.CTkButton(self.button_frame, text="Next >", command=self.show_next_image)
+        self.next_button.pack(side=ctk.LEFT, padx=5, pady=5)
+
+        self.image_dir = None  # Directory to watch for images
+        self.current_image_index = 0  # Index of the currently displayed image
+        self.image_files = []  # List of image files in the directory
+        
+        # --- Dataset Tab Setup ---
+        self.dataset_frame = ctk.CTkScrollableFrame(self.tab("Dataset"), label_text="Images and Masks")
+        self.dataset_frame.grid(row=0, column=0, sticky="nsew")
+
+        # Configure grid weights for resizing
+        self.tab("Losses").grid_rowconfigure(0, weight=1)
+        self.tab("Losses").grid_columnconfigure(0, weight=1)
+        self.tab("Image Evolution").grid_rowconfigure(0, weight=1)
+        self.tab("Image Evolution").grid_columnconfigure(0, weight=1)
+        self.tab("Dataset").grid_rowconfigure(0, weight=1)
+        self.tab("Dataset").grid_columnconfigure(0, weight=1)
+
+        # Clear plots on initialization
+        self.clear_plots()
+
+    def set_image_dir(self, image_dir):
+        """Sets the directory to watch for images and updates the image list."""
+        self.image_dir = image_dir
+        self.update_image_list()
+        self.current_image_index = len(self.image_files) - 1  # Point to the last image
+        self.show_current_image()  # Display the last image in the new directory
+
+    def update_image_list(self):
+        """Updates the list of image files from the current directory."""
+        if self.image_dir:
+            image_files = [f for f in os.listdir(self.image_dir) if os.path.isfile(os.path.join(self.image_dir, f)) and f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+
+            # Sort files numerically based on the first number in the filename
+            def sort_key(filename):
+                match = re.search(r'\d+', filename)
+                if match:
+                    return int(match.group(0))
+                return 0  # Default sort key if no number is found
+
+            self.image_files = sorted(image_files, key=sort_key)
+        else:
+            self.image_files = []
+
+    def show_previous_image(self):
+        """Displays the previous image in the list."""
+        if self.image_files and self.current_image_index > 0:
+            self.current_image_index -= 1
+            self.show_current_image()
+
+    def show_next_image(self):
+        """Displays the next image in the list."""
+        if self.image_files and self.current_image_index < len(self.image_files) - 1:
+            self.current_image_index += 1
+            self.show_current_image()
+
+    def show_current_image(self):
+        """Displays the image at the current index."""
+        if not self.image_files:
+            print("No images to display.")
+            self.image_ax.clear()
+            self.image_ax.set_title("Image Evolution")
+            self.image_ax.axis("off")
+            self.image_canvas.draw()
+            return
+
+        # Ensure the index is within valid bounds
+        self.current_image_index = max(0, min(self.current_image_index, len(self.image_files) - 1))
+
+        image_path = os.path.join(self.image_dir, self.image_files[self.current_image_index])
+        try:
+            img = Image.open(image_path)
+            self.image_ax.clear()
+            self.image_ax.imshow(img)
+            self.image_ax.set_title(f"Image Evolution - Epoch {self.image_files[self.current_image_index][:-4]}")
+            self.image_ax.axis("off")
+            self.image_canvas.draw()
+        except Exception as e:
+            print(f"Error loading image {image_path}: {e}")
+
+    def plot_loss(self, train_loss_values, val_loss_values):
+        """Plots the training and validation loss values on the Losses tab."""
+        self.loss_ax.clear()
+
+        if train_loss_values:
+            # Use x+1 for epoch index when plotting
+            self.loss_ax.plot(range(1, len(train_loss_values) + 1), train_loss_values, label="Train Loss")
+        if val_loss_values:
+            # Use x+1 for epoch index when plotting
+            self.loss_ax.plot(range(1, len(val_loss_values) + 1), val_loss_values, label="Val Loss")
+
+        self.loss_ax.set_xlabel("Epoch")
+        self.loss_ax.set_ylabel("Loss")
+        self.loss_ax.set_title("Training and Validation Loss")
+        self.loss_ax.legend()
+
+        # Force integer ticks on x-axis
+        self.loss_ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+        self.loss_ax.xaxis.set_major_formatter(FuncFormatter(lambda x, _: int(x)))
+
+        self.loss_canvas.draw()
+
+    def clear_plots(self):
+        """Clears the plots in both tabs."""
+        self.loss_ax.clear()
+        self.loss_canvas.draw()
+        self.image_ax.clear()
+        self.image_ax.set_title("Image Evolution")
+        self.image_ax.axis("off")
+        self.image_canvas.draw()
+
+    def show_empty_image_plot(self):
+        """Displays an empty plot for Image Evolution."""
+        self.image_ax.clear()
+        self.image_ax.set_title("Image Evolution")
+        self.image_ax.axis("off")
+        self.image_canvas.draw()
+        
+    def reset_image_data(self):
+        """Resets image-related data for a new training session."""
+        self.image_dir = None
+        self.current_image_index = 0
+        self.image_files = []
+        self.clear_plots()
+        
+    def visualize_dataset(self, dataset, num_samples=6):
+        """Visualizes dataset samples in the Dataset tab."""
+        self.switch_to_tab("Dataset")
+        self.clear_dataset_frame()
+
+        for i in range(num_samples):
+            image, mask = dataset[i]
+            image_np = image.permute(1, 2, 0).numpy() if isinstance(image, torch.Tensor) else image
+            mask_np = mask.squeeze().numpy() if isinstance(mask, torch.Tensor) else mask
+
+            if image_np.max() > 1:
+                image_np = image_np / image_np.max()
+
+            image_label = ctk.CTkLabel(self.dataset_frame, text=f"Image {i + 1}", font=("Arial", 12, "bold"))
+            image_label.grid(row=2 * i, column=0, padx=5, pady=5, sticky="w")
+
+            image_ctk = ctk.CTkImage(light_image=Image.fromarray((image_np * 255).astype(np.uint8)),
+                                     dark_image=Image.fromarray((image_np * 255).astype(np.uint8)),
+                                     size=(128, 128))
+            image_ctk_label = ctk.CTkLabel(self.dataset_frame, image=image_ctk, text="")
+            image_ctk_label.grid(row=2 * i + 1, column=0, padx=5, pady=5)
+
+            mask_label = ctk.CTkLabel(self.dataset_frame, text=f"Mask {i + 1}", font=("Arial", 12, "bold"))
+            mask_label.grid(row=2 * i, column=1, padx=5, pady=5, sticky="w")
+
+            mask_ctk = ctk.CTkImage(light_image=Image.fromarray((mask_np * 255).astype(np.uint8)),
+                                    dark_image=Image.fromarray((mask_np * 255).astype(np.uint8)),
+                                    size=(128, 128))
+            mask_ctk_label = ctk.CTkLabel(self.dataset_frame, image=mask_ctk, text="")
+            mask_ctk_label.grid(row=2 * i + 1, column=1, padx=5, pady=5)
+
+    def clear_dataset_frame(self):
+        """Clears all widgets from the dataset frame."""
+        for widget in self.dataset_frame.winfo_children():
+            widget.destroy()
+
+    def class_distribution(self, dataset, classes_names=['Background', 'Foreground']):
+        """Calculates and plots the class distribution in the Dataset tab."""
+        self.switch_to_tab("Dataset")
+        self.clear_dataset_frame()
+        total_pixels = 0
+        foreground_pixels = 0
+
+        for _, mask in dataset:
+            mask = mask.permute(1, 2, 0).numpy()
+            total_pixels += mask.shape[0] * mask.shape[1]
+            foreground_pixels += (mask == 1).sum()
+
+        background_pixels = total_pixels - foreground_pixels
+
+        counts = [background_pixels, foreground_pixels]
+        percentages = [background_pixels / total_pixels * 100, foreground_pixels / total_pixels * 100]
+
+        # Create a new figure and axes for the class distribution plot
+        fig, ax = plt.subplots(figsize=(5, 4), dpi=100)
+        bars = ax.bar(classes_names, counts, color=['blue', 'orange'])
+        ax.set_ylabel('Pixel Count')
+        ax.set_title('Class Distribution')
+
+        for bar, percentage in zip(bars, percentages):
+            height = bar.get_height()
+            ax.text(bar.get_x() + bar.get_width() / 2, height, f"{percentage:.2f}%",
+                    ha="center", va="bottom", fontsize=10, color="black")
+
+        # Embed the new figure in the dataset frame
+        canvas = FigureCanvasTkAgg(fig, master=self.dataset_frame)
+        canvas_widget = canvas.get_tk_widget()
+        canvas_widget.pack(side=ctk.TOP, fill=ctk.BOTH, expand=True)
+        canvas.draw()
+
+    def visualize_overlay(self, dataset, idx=None, alpha=0.5):
+        """Visualizes the overlay of an image and its mask in the Image Evolution tab."""
+        self.switch_to_tab("Dataset")
+        self.clear_dataset_frame()
+        if idx is None:
+            idx = np.random.randint(0, len(dataset))
+
+        image, mask = dataset[idx]
+        image = image.permute(1, 2, 0).numpy() if isinstance(image, torch.Tensor) else image
+        if image.dtype != np.uint8:
+            image = (image * 255).astype(np.uint8)
+
+        # Create a new figure and axes for the overlay plot
+        fig, ax = plt.subplots(figsize=(5, 4), dpi=100)
+        ax.imshow(image, alpha=1.0)
+        ax.imshow(mask.squeeze(0), cmap="jet", alpha=alpha)
+        ax.axis("off")
+        ax.set_title(f"Overlay of Image and Mask [Index: {idx}]")
+
+        # Embed the new figure in the dataset frame
+        canvas = FigureCanvasTkAgg(fig, master=self.dataset_frame)
+        canvas_widget = canvas.get_tk_widget()
+        canvas_widget.pack(side=ctk.TOP, fill=ctk.BOTH, expand=True)
+        canvas.draw()
+
+    def image_histogram(self, image):
+        """Calculates and plots the histogram of pixel values in an image on the Dataset tab."""
+        self.switch_to_tab("Dataset")
+        self.clear_dataset_frame()
+        if isinstance(image, torch.Tensor):
+            image = image.permute(1, 2, 0).numpy()
+        if image.dtype != np.uint8:
+            image = (image * 255).astype(np.uint8)
+
+        pixel_values = image.flatten()
+
+        # Create a new figure and axes for the histogram plot
+        fig, ax = plt.subplots(figsize=(5, 4), dpi=100)
+        ax.hist(pixel_values, bins=256, range=(0, 256), color='blue', alpha=0.7)
+        ax.set_xlabel('Pixel Value')
+        ax.set_ylabel('Frequency')
+        ax.set_title('Histogram of Pixel Values')
+
+        # Embed the new figure in the dataset frame
+        canvas = FigureCanvasTkAgg(fig, master=self.dataset_frame)
+        canvas_widget = canvas.get_tk_widget()
+        canvas_widget.pack(side=ctk.TOP, fill=ctk.BOTH, expand=True)
+        canvas.draw()
+
+    def inspect(self, dataset):
+        """Logs basic information about the dataset images and masks in the Dataset tab."""
+        self.switch_to_tab("Dataset")
+        self.clear_dataset_frame()
+        info = ""
+        for i in range(min(5, len(dataset))):
+            image, mask = dataset[i]
+            info += f"Image {i+1}: Shape - {image.shape}, Min/Max - ({image.min()}, {image.max()})\n"
+            info += f"Mask {i+1}: Shape - {mask.shape}, Unique Values - {torch.unique(mask)}\n"
+
+        # Create a text widget to display the information
+        text_widget = ctk.CTkTextbox(self.dataset_frame, wrap=tk.WORD, height=10, width=30)
+        text_widget.insert(tk.END, info)
+        text_widget.pack(side=ctk.TOP, fill=ctk.BOTH, expand=True)
+
+    def switch_to_tab(self, tab_name):
+        """Switches the view to the specified tab."""
+        self.set(tab_name)
 
 class ModeltrainingGUI:
     def __init__(self):
@@ -121,11 +460,13 @@ class ModeltrainingGUI:
         threading.Thread(target=self.process_queue_continuous, daemon=True).start()
 
         self.create_gui()
+        
+        # Clear plots on GUI initialization
+        self.plot_panel.clear_plots()
+        self.plot_panel.show_empty_image_plot()
 
     def _init_variables(self):
         self.model_var = tk.StringVar(value="U-Net")
-        self.dropout_prob_var = tk.StringVar(value="0.5")
-        self.pooling_type_var = tk.StringVar(value="Max")
         self.encoder_var = tk.StringVar(value="resnet50")
         self.pretrained_weights_var = tk.BooleanVar(value=False)
 
@@ -157,6 +498,15 @@ class ModeltrainingGUI:
         self.data_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\data")
         self.out_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\runs")
         self.normalize_var = tk.BooleanVar(value=False)
+        
+        # testing variables
+        self.test_model_var = tk.StringVar(value="U-Net")
+        self.test_encoder_var = tk.StringVar(value="resnet50")
+        self.test_model_path_var = tk.StringVar(value="")
+        self.test_data_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\data")
+        self.test_batch_size_var = tk.StringVar(value="6")
+        self.test_normalize_var = tk.BooleanVar(value=False)
+        
 
     def validate_numeric_input(self, new_value):
         if not new_value:
@@ -176,6 +526,18 @@ class ModeltrainingGUI:
         except ValueError:
             return False
 
+    def browse_dir(self, entry):
+        file_path = filedialog.askdirectory()
+        if file_path:
+            entry.delete(0, tk.END)
+            entry.insert(0, file_path)
+            
+    def browse_file(self, entry):
+        file_path = filedialog.askopenfilename()
+        if file_path:
+            entry.delete(0, tk.END)
+            entry.insert(0, file_path)
+    
     def log_message(self, message):
         if self.messages_box:
             self.messages_box.config(state=tk.NORMAL)
@@ -186,23 +548,9 @@ class ModeltrainingGUI:
             time.sleep(0.05)  # Increased delay to 0.05 seconds in log_message
             #self.window.update_idletasks() # no need for this here, update() is stronger
 
-    def show_dummy_plot(self):
-        fig, ax = plt.subplots(figsize=(6, 4))
-        ax.plot([0, 1, 2, 3, 4], [10, 12, 8, 15, 13])
-        ax.set_title("Dummy Plot")
-        ax.set_xlabel("X-Axis")
-        ax.set_ylabel("Y-Axis")
-
-        canvas = FigureCanvasTkAgg(fig, master=self.plots_frame)
-        canvas_widget = canvas.get_tk_widget()
-        canvas_widget.pack(fill=tk.BOTH, expand=True)
-        canvas.draw()
-
     def save_config(self):
         config = {
             "model": self.model_var.get(),
-            "dropout_prob": self.dropout_prob_var.get(),
-            "pooling_tpe": self.pooling_type_var.get(),
             "encoder": self.encoder_var.get(),
             "pretrained_weights": self.pretrained_weights_var.get(),
             "optimizer": self.optimizer_var.get(),
@@ -229,6 +577,7 @@ class ModeltrainingGUI:
             "batch_size": self.batch_size_var.get(),
             "data_dir": self.data_dir_var.get(),
             "out_dir": self.out_dir_var.get(),
+            "transform": self.transforms_widget.get_sequence()
         }
 
         file_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
@@ -246,8 +595,6 @@ class ModeltrainingGUI:
                 with open(file_path, 'r') as f:
                     config = json.load(f)
                 self.model_var.set(config.get("model", ""))
-                self.dropout_prob_var.set(config.get("dropout_prob", ""))
-                self.pooling_type_var.set(config.get("pooling_type"))
                 self.encoder_var.set(config.get("encoder", ""))
                 self.pretrained_weights_var.set(config.get("pretrained_weights", False))
                 self.optimizer_var.set(config.get("optimizer", ""))
@@ -274,6 +621,9 @@ class ModeltrainingGUI:
                 self.batch_size_var.set(config.get("batch_size", ""))
                 self.data_dir_var.set(config.get("data_dir", ""))
                 self.out_dir_var.set(config.get("out_dir", ""))
+                
+                self.transforms_widget.load_config(config_string=config.get("transform", ""))
+                     
             except Exception as e:
                 messagebox.showerror("Error", f"Failed to load configuration: {e}")
 
@@ -343,50 +693,58 @@ class ModeltrainingGUI:
         else:
             ctk.CTkLabel(self.scheduler_options_frame, text="No options for selected scheduler").grid(row=0, column=0, columnspan=3, sticky="e", padx=5, pady=5)
 
-    def update_loss_function_options(self, *args):
-        for widget in self.loss_function_options_frame.winfo_children():
+    def update_loss_function_options(self, calling_frame, *args):
+        # Remove existing traces for submenus if they exist
+        if hasattr(self, 'loss_func1_trace_id') and self.loss_func1_trace_id:
+            self.loss_func1_var.trace_remove("write", self.loss_func1_trace_id)
+            self.loss_func1_trace_id = None
+        if hasattr(self, 'loss_func2_trace_id') and self.loss_func2_trace_id:
+            self.loss_func2_var.trace_remove("write", self.loss_func2_trace_id)
+            self.loss_func2_trace_id = None
+        
+        for widget in calling_frame.winfo_children():
             widget.destroy()
 
         if self.loss_func_var.get() == "FocalTversky":
-            ctk.CTkLabel(self.loss_function_options_frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(self.loss_function_options_frame, textvariable=self.alpha_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(calling_frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.alpha_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
-            ctk.CTkLabel(self.loss_function_options_frame, text="Beta").grid(row=1, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(self.loss_function_options_frame, textvariable=self.beta_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(calling_frame, text="Beta").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.beta_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
-            ctk.CTkLabel(self.loss_function_options_frame, text="Gamma").grid(row=2, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(self.loss_function_options_frame, textvariable=self.gamma_var).grid(row=2, column=1, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(calling_frame, text="Gamma").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.gamma_var).grid(row=2, column=1, sticky="w", padx=5, pady=5)
 
         elif self.loss_func_var.get() == "Tversky":
-            ctk.CTkLabel(self.loss_function_options_frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(self.loss_function_options_frame, textvariable=self.alpha_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(calling_frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.alpha_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
-            ctk.CTkLabel(self.loss_function_options_frame, text="Beta").grid(row=1, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(self.loss_function_options_frame, textvariable=self.beta_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(calling_frame, text="Beta").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.beta_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
            
         elif self.loss_func_var.get() == "Combo":
-            ctk.CTkLabel(self.loss_function_options_frame, text="1").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkComboBox(self.loss_function_options_frame, values=["FocalTversky",
+            ctk.CTkLabel(calling_frame, text="1").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkComboBox(calling_frame, values=["FocalTversky",
                                                                      "Tversky",
                                                                      "IoU"], variable=self.loss_func1_var).grid(row=0, column=1, sticky="e", padx=5, pady=5)
-            self.loss_function_options_frame1 = ctk.CTkFrame(self.loss_function_options_frame)
-            loss_function_option_button1 = ctk.CTkButton(self.loss_function_options_frame, text="\u25BC", width=30)
+            self.loss_function_options_frame1 = ctk.CTkFrame(calling_frame)
+            loss_function_option_button1 = ctk.CTkButton(calling_frame, text="\u25BC", width=30)
             loss_function_option_button1.configure(command=lambda btn=loss_function_option_button1: self.toggle_options(self.loss_function_options_frame1, row=1, button=btn, update_function= lambda: self.update_loss_function_submenu(1)))
             loss_function_option_button1.grid(row=0, column=2, sticky="w", padx=5, pady=5)
-            ctk.CTkLabel(self.loss_function_options_frame, text="w").grid(row=0, column=3, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(self.loss_function_options_frame, textvariable=self.loss_func1_weight_var, width=30).grid(row=0, column=4, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(calling_frame, text="w").grid(row=0, column=3, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.loss_func1_weight_var, width=30).grid(row=0, column=4, sticky="w", padx=5, pady=5)
             
             
-            ctk.CTkLabel(self.loss_function_options_frame, text="2").grid(row=2, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkComboBox(self.loss_function_options_frame, values=["FocalTversky",
+            ctk.CTkLabel(calling_frame, text="2").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkComboBox(calling_frame, values=["FocalTversky",
                                                                      "Tversky",
                                                                      "IoU"], variable=self.loss_func2_var).grid(row=2, column=1, sticky="e", padx=5, pady=5)
-            self.loss_function_options_frame2 = ctk.CTkFrame(self.loss_function_options_frame)
-            loss_function_option_button2 = ctk.CTkButton(self.loss_function_options_frame, text="\u25BC", width=30, )
+            self.loss_function_options_frame2 = ctk.CTkFrame(calling_frame)
+            loss_function_option_button2 = ctk.CTkButton(calling_frame, text="\u25BC", width=30, )
             loss_function_option_button2.configure(command=lambda btn=loss_function_option_button2: self.toggle_options(self.loss_function_options_frame2, row=3, button=btn, update_function= lambda: self.update_loss_function_submenu(2)))
             loss_function_option_button2.grid(row=2, column=2, sticky="w", padx=5, pady=5)
-            ctk.CTkLabel(self.loss_function_options_frame, text="w").grid(row=2, column=3, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(self.loss_function_options_frame, textvariable=self.loss_func2_weight_var, width=30).grid(row=2, column=4, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(calling_frame, text="w").grid(row=2, column=3, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.loss_func2_weight_var, width=30).grid(row=2, column=4, sticky="w", padx=5, pady=5)
             
             self.update_loss_function_submenu(1)
             self.update_loss_function_submenu(2)
@@ -394,15 +752,10 @@ class ModeltrainingGUI:
         else:
             return
             
-        # Update trace for submenus only when 'Combo' is selected
         if self.loss_func_var.get() == "Combo":
-            self.loss_func1_var.trace_add("write", lambda *args: self.update_loss_function_submenu(1))
-            self.loss_func2_var.trace_add("write", lambda *args: self.update_loss_function_submenu(2))
-        else:
-            self.loss_func1_var.trace_remove("write")
-            self.loss_func2_var.trace_remove("write")
-
-        
+            self.loss_func1_trace_id = self.loss_func1_var.trace_add("write", lambda *args: self.update_loss_function_submenu(1))
+            self.loss_func2_trace_id = self.loss_func2_var.trace_add("write", lambda *args: self.update_loss_function_submenu(2))
+      
     def update_loss_function_submenu(self, option, *args):
         if option == 1:
             frame = self.loss_function_options_frame1
@@ -433,7 +786,6 @@ class ModeltrainingGUI:
             ctk.CTkLabel(frame, text="Beta").grid(row=1, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkEntry(frame, textvariable=self.beta_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
-
     def create_gui(self):
         
         main_frame = ctk.CTkFrame(self.window)
@@ -451,6 +803,8 @@ class ModeltrainingGUI:
         tab_view.add("Testing")
         
         self.create_training_tab(tab_view.tab("Training"))
+        self.create_dataset_tab(tab_view.tab("Dataset"))
+        self.create_testing_tab(tab_view.tab("Testing"))
                
     def create_training_tab(self, parent):
         
@@ -472,18 +826,18 @@ class ModeltrainingGUI:
                                                         "PAN",
                                                         "DeepLabV3",
                                                         "DeepLabV3+"
-                                                        ], variable=self.model_var).grid(row=0, column=1, sticky="e", padx=5, pady=5)
-        self.model_options_frame = ctk.CTkFrame(left_frame)
-        model_options_button = ctk.CTkButton(left_frame, text="\u25BC", width=30)
-        model_options_button.configure(command=lambda btn=model_options_button: self.toggle_options(self.model_options_frame, row=1, button=btn))
-        model_options_button.grid(row=0, column=2, sticky="w", padx=5, pady=5)
+                                                        ], variable=self.model_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        # self.model_options_frame = ctk.CTkFrame(left_frame)
+        # model_options_button = ctk.CTkButton(left_frame, text="\u25BC", width=30)
+        # model_options_button.configure(command=lambda btn=model_options_button: self.toggle_options(self.model_options_frame, row=1, button=btn))
+        # model_options_button.grid(row=0, column=2, sticky="w", padx=5, pady=5)
 
-        # Widgets for model options
-        ctk.CTkLabel(self.model_options_frame, text="Dropout Prob").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-        ctk.CTkEntry(self.model_options_frame, textvariable=self.dropout_prob_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        # # Widgets for model options
+        # ctk.CTkLabel(self.model_options_frame, text="Dropout Prob").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+        # ctk.CTkEntry(self.model_options_frame, textvariable=self.dropout_prob_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
         
-        ctk.CTkLabel(self.model_options_frame, text="Pooling Type").grid(row=1, column=0, sticky="e", padx=5, pady=5)
-        ctk.CTkComboBox(self.model_options_frame, values=["Max", "Avg"], variable=self.pooling_type_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        # ctk.CTkLabel(self.model_options_frame, text="Pooling Type").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        # ctk.CTkComboBox(self.model_options_frame, values=["Max", "Avg"], variable=self.pooling_type_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
         ###############################################################################################################
         # Encoder selection and dropdown
@@ -498,7 +852,7 @@ class ModeltrainingGUI:
                                                             "swinv2_cr_giant_38",
                                                             "vit_giant_patch14_clip_224",
                                                             "vit_giant_patch14_reg4_dinov2"
-                                                            ], variable=self.encoder_var).grid(row=2, column=1, sticky="e", padx=5, pady=5)
+                                                            ], variable=self.encoder_var).grid(row=2, column=1, sticky="w", padx=5, pady=5)
         self.encoder_options_frame = ctk.CTkFrame(left_frame)
         encoder_options_button = ctk.CTkButton(left_frame, text="\u25BC", width=30,)
         encoder_options_button.configure( command=lambda btn=encoder_options_button: self.toggle_options(self.encoder_options_frame, row=3, button=btn))
@@ -513,7 +867,7 @@ class ModeltrainingGUI:
         # Optimizer selection and dropdown
         ctk.CTkLabel(left_frame, text="Optimizer").grid(row=4, column=0, sticky="e", padx=5, pady=5)
         optimizer_dropdown = ctk.CTkComboBox(left_frame, values=["Adam",
-                                                                 "SGD"], variable=self.optimizer_var).grid(row=4, column=1, sticky="e", padx=5, pady=5)
+                                                                 "SGD"], variable=self.optimizer_var).grid(row=4, column=1, sticky="w", padx=5, pady=5)
         self.optimizer_options_frame = ctk.CTkFrame(left_frame)
         optimizer_options_button = ctk.CTkButton(left_frame, text="\u25BC", width=30)
         optimizer_options_button.configure(command=lambda btn=optimizer_options_button: self.toggle_options(self.optimizer_options_frame, row=5, button=btn, update_function=self.update_optimizer_options))
@@ -527,7 +881,7 @@ class ModeltrainingGUI:
         scheduler_dropdown = ctk.CTkComboBox(left_frame, values=["None",
                                                                  "StepLR",
                                                                  "LinearLR",
-                                                                 "CosineAnnealingLR"], variable=self.scheduler_var).grid(row=6, column=1, sticky="e", padx=5, pady=5)
+                                                                 "CosineAnnealingLR"], variable=self.scheduler_var).grid(row=6, column=1, sticky="w", padx=5, pady=5)
         self.scheduler_options_frame = ctk.CTkFrame(left_frame)
         scheduler_options_button = ctk.CTkButton(left_frame, text="\u25BC", width=30, )
         scheduler_options_button.configure(command=lambda btn=scheduler_options_button: self.toggle_options(self.scheduler_options_frame, row=7, button=btn, update_function=self.update_scheduler_options))
@@ -540,12 +894,12 @@ class ModeltrainingGUI:
         loss_function_dropdown = ctk.CTkComboBox(left_frame, values=["FocalTversky",
                                                                      "Tversky",
                                                                      "IoU",
-                                                                     "Combo"], variable=self.loss_func_var).grid(row=8, column=1, sticky="e", padx=5, pady=5)
+                                                                     "Combo"], variable=self.loss_func_var).grid(row=8, column=1, sticky="w", padx=5, pady=5)
         self.loss_function_options_frame = ctk.CTkFrame(left_frame)
         loss_function_option_button = ctk.CTkButton(left_frame, text="\u25BC", width=30, )
-        loss_function_option_button.configure(command=lambda btn=loss_function_option_button: self.toggle_options(self.loss_function_options_frame, row=9, button=btn, update_function=self.update_loss_function_options))
+        loss_function_option_button.configure(command=lambda btn=loss_function_option_button: self.toggle_options(self.loss_function_options_frame, row=9, button=btn, update_function=self.update_loss_function_options(self.loss_function_options_frame)))
         loss_function_option_button.grid(row=8, column=2, sticky="w", padx=5, pady=5)
-        self.loss_func_var.trace_add("write", self.update_loss_function_options)
+        self.loss_func_var.trace_add("write", lambda *args: self.update_loss_function_options(self.loss_function_options_frame, *args))
 
         ###############################################################################################################
 
@@ -554,7 +908,7 @@ class ModeltrainingGUI:
             ctk.CTkLabel(left_frame, text=dir_label).grid(row=i, column=0, sticky="e", padx=5, pady=5)
             dir_entry = ctk.CTkEntry(left_frame, textvariable=self.data_dir_var if dir_label == "Data Dir" else self.out_dir_var)
             dir_entry.grid(row=i, column=1, sticky="w", padx=5, pady=5)
-            browse_button = ctk.CTkButton(left_frame, text="...", width=30, command=lambda entry=dir_entry: self.browse_file(entry))
+            browse_button = ctk.CTkButton(left_frame, text="...", width=30, command=lambda entry=dir_entry: self.browse_dir(entry))
             browse_button.grid(row=i, column=2, sticky="w", padx=5, pady=5)
 
         ctk.CTkLabel(left_frame, text="Epochs").grid(row=12, column=0, sticky="e", padx=5, pady=5)
@@ -567,8 +921,8 @@ class ModeltrainingGUI:
         ctk.CTkSwitch(left_frame, text="", variable=self.normalize_var, onvalue=True, offvalue=False).grid(row=14, column=1, sticky="w", padx=5, pady=5)
 
         available_transforms = ["transforms.ToTensor", "transforms.Resize"]
-        self.transforms_widgets = TransformWidget(left_frame, available_transforms=available_transforms)
-        self.transforms_widgets.grid(row=15, column=0, columnspan=3, sticky="we", padx=5, pady=5)
+        self.transforms_widget = TransformWidget(left_frame, available_transforms=available_transforms)
+        self.transforms_widget.grid(row=15, column=0, columnspan=3, sticky="we", padx=5, pady=5)
 
         train_button = ctk.CTkButton(left_frame, text="Start training", command=self.start_training, height=30)
         train_button.grid(row=16, columnspan=3, sticky="we", padx=5, pady=5)
@@ -584,6 +938,162 @@ class ModeltrainingGUI:
 
         slider = ctk.CTkSlider(left_frame, from_=0.8, to=1.6, number_of_steps=10, command=self.change_scaling_event)
         slider.grid(row=18,columnspan=3, sticky="we", padx=5, pady=5)
+  
+    def create_testing_tab(self, parent):
+        container_frame = ctk.CTkFrame(parent)
+        container_frame.pack(fill=tk.BOTH, expand=True)
+
+        left_frame = ctk.CTkScrollableFrame(container_frame, width=300)
+        left_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Model selection dropdown with toggle button
+        ctk.CTkLabel(left_frame, text="Model").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+        model_dropdown = ctk.CTkComboBox(left_frame, values=["U-Net",
+                                                        "U-Net++",
+                                                        "MAnet",
+                                                        "LinkNet",
+                                                        "FPN",
+                                                        "PSPNet",
+                                                        "PAN",
+                                                        "DeepLabV3",
+                                                        "DeepLabV3+"
+                                                        ], variable=self.test_model_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        
+        # Encoder selection and dropdown
+        ctk.CTkLabel(left_frame, text="Encoder").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        encoder_dropdown = ctk.CTkComboBox(left_frame, values=["efficientnet_b8",
+                                                            "efficientnetv2_xl",
+                                                            "resnet152",
+                                                            "resnext50_32x4d",
+                                                            "hrnet_w64",
+                                                            "convnext_xxlarge",
+                                                            "swin_large_patch4_window12_384",
+                                                            "swinv2_cr_giant_38",
+                                                            "vit_giant_patch14_clip_224",
+                                                            "vit_giant_patch14_reg4_dinov2"
+                                                            ], variable=self.test_encoder_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+
+        ctk.CTkLabel(left_frame, text="Model Path").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+        dir_entry = ctk.CTkEntry(left_frame, textvariable=self.test_model_path_var)
+        dir_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        browse_button = ctk.CTkButton(left_frame, text="...", width=30, command=lambda entry=dir_entry: self.browse_file(entry))
+        browse_button.grid(row=2, column=2, sticky="w", padx=5, pady=5)
+        
+        ctk.CTkLabel(left_frame, text="Loss function").grid(row=3, column=0, sticky="e", padx=5, pady=5)
+        loss_function_dropdown = ctk.CTkComboBox(left_frame, values=["FocalTversky",
+                                                                     "Tversky",
+                                                                     "IoU",
+                                                                     "Combo"], variable=self.loss_func_var).grid(row=3, column=1, sticky="w", padx=5, pady=5)
+        self.test_loss_function_options_frame = ctk.CTkFrame(left_frame)
+        loss_function_option_button = ctk.CTkButton(left_frame, text="\u25BC", width=30, )
+        loss_function_option_button.configure(command=lambda btn=loss_function_option_button: self.toggle_options(self.test_loss_function_options_frame, row=4, button=btn, update_function=self.update_loss_function_options(self.test_loss_function_options_frame)))
+        loss_function_option_button.grid(row=3, column=2, sticky="w", padx=5, pady=5)
+        self.loss_func_var.trace_add("write", lambda *args: self.update_loss_function_options(self.test_loss_function_options_frame, *args))
+        
+        ctk.CTkLabel(left_frame, text="Data Dir").grid(row=5, column=0, sticky="e", padx=5, pady=5)
+        dir_entry = ctk.CTkEntry(left_frame, textvariable=self.test_data_dir_var)
+        dir_entry.grid(row=5, column=1, sticky="w", padx=5, pady=5)
+        browse_button = ctk.CTkButton(left_frame, text="...", width=30, command=lambda entry=dir_entry: self.browse_dir(entry))
+        browse_button.grid(row=5, column=2, sticky="w", padx=5, pady=5)
+        
+        ctk.CTkLabel(left_frame, text="Batch Size").grid(row=6, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkEntry(left_frame, textvariable=self.test_batch_size_var, validatecommand=self.validate_int_input).grid(row=6, column=1, sticky="w", padx=5, pady=5)
+        
+        ctk.CTkLabel(left_frame, text="Normalize").grid(row=7, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkSwitch(left_frame, text="", variable=self.test_normalize_var, onvalue=True, offvalue=False).grid(row=7, column=1, sticky="w", padx=5, pady=5)
+
+        available_transforms = ["transforms.ToTensor", "transforms.Resize"]
+        self.test_transforms_widget = TransformWidget(left_frame, available_transforms=available_transforms)
+        self.test_transforms_widget.grid(row=8, column=0, columnspan=3, sticky="we", padx=5, pady=5)
+
+        test_button = ctk.CTkButton(left_frame, text="Start testing", command=self.start_testing, height=30)
+        test_button.grid(row=9, columnspan=3, sticky="we", padx=5, pady=5)
+        
+        slider = ctk.CTkSlider(left_frame, from_=0.8, to=1.6, number_of_steps=10, command=self.change_scaling_event)
+        slider.grid(row=10,columnspan=3, sticky="we", padx=5, pady=5)
+    
+    def create_dataset_tab(self, parent):
+        container_frame = ctk.CTkFrame(parent)
+        container_frame.pack(fill=tk.BOTH, expand=True)
+
+        left_frame = ctk.CTkScrollableFrame(container_frame, width=300)
+        left_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Dataset Directory Selection
+        ctk.CTkLabel(left_frame, text="Dataset Dir").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+        dataset_dir_entry = ctk.CTkEntry(left_frame, textvariable=self.data_dir_var)
+        dataset_dir_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
+        browse_button = ctk.CTkButton(left_frame, text="...", width=30, command=lambda entry=dataset_dir_entry: self.browse_dir(entry))
+        browse_button.grid(row=0, column=2, sticky="w", padx=5, pady=5)
+
+        # Visualization Buttons
+        button_width = 20  # Adjust button width as needed
+
+        visualize_button = ctk.CTkButton(left_frame, text="Visualize Dataset", width=button_width, command=self.visualize_dataset_clicked)
+        visualize_button.grid(row=1, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+
+        class_dist_button = ctk.CTkButton(left_frame, text="Class Distribution", width=button_width, command=self.class_distribution_clicked)
+        class_dist_button.grid(row=2, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+
+        overlay_button = ctk.CTkButton(left_frame, text="Visualize Overlay", width=button_width, command=self.visualize_overlay_clicked)
+        overlay_button.grid(row=3, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+
+        histogram_button = ctk.CTkButton(left_frame, text="Image Histogram", width=button_width, command=self.image_histogram_clicked)
+        histogram_button.grid(row=4, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+
+        inspect_button = ctk.CTkButton(left_frame, text="Inspect Dataset", width=button_width, command=self.inspect_dataset_clicked)
+        inspect_button.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+    
+    def visualize_dataset_clicked(self):
+        self.load_and_visualize("visualize_dataset")
+
+    def class_distribution_clicked(self):
+        self.load_and_visualize("class_distribution")
+
+    def visualize_overlay_clicked(self):
+        self.load_and_visualize("visualize_overlay")
+
+    def image_histogram_clicked(self):
+        self.load_and_visualize("image_histogram")
+
+    def inspect_dataset_clicked(self):
+        self.load_and_visualize("inspect")
+
+    def load_and_visualize(self, visualization_type):
+        data_dir = self.data_dir_var.get()
+        if not data_dir:
+            messagebox.showerror("Error", "Please select a dataset directory.")
+            return
+
+        image_dir = os.path.join(data_dir, "images")
+        mask_dir = os.path.join(data_dir, "masks")
+
+        # Check if image and mask directories exist
+        if not os.path.exists(image_dir) or not os.path.exists(mask_dir):
+            messagebox.showerror("Error", "Dataset directory must contain 'images' and 'masks' subdirectories.")
+            return
+
+        transform = transforms.Compose([
+            transforms.Resize((256, 256)),
+            transforms.ToTensor()
+        ])
+
+        try:
+            dataset = SegmentationDataset(image_dir, mask_dir, image_transform=transform, mask_transform=transform)
+            if visualization_type == "visualize_dataset":
+                self.plot_panel.visualize_dataset(dataset)
+            elif visualization_type == "class_distribution":
+                self.plot_panel.class_distribution(dataset)
+            elif visualization_type == "visualize_overlay":
+                self.plot_panel.visualize_overlay(dataset)
+            elif visualization_type == "image_histogram":
+                idx = np.random.randint(0, len(dataset))
+                image, _ = dataset[idx]
+                self.plot_panel.image_histogram(image)
+            elif visualization_type == "inspect":
+                self.plot_panel.inspect(dataset)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load or visualize dataset: {e}")
     
     def change_scaling_event(self, new_scaling: str):
         new_scaling = float(new_scaling)
@@ -596,11 +1106,12 @@ class ModeltrainingGUI:
         content_frame = ctk.CTkFrame(right_frame)
         content_frame.pack(fill=tk.BOTH, expand=True)
 
-        plot_frame = ctk.CTkFrame(content_frame)
-        plot_frame.pack(fill=tk.BOTH, expand=True)
+        self.plot_frame = ctk.CTkFrame(content_frame)
+        self.plot_frame.pack(fill=tk.BOTH, expand=True)
 
-        plot_panel = PlotView(plot_frame, anchor="s")
-        plot_panel.pack(fill=tk.BOTH, expand=True)
+        self.plot_panel = PlotView(self.plot_frame, anchor="s")
+        self.plot_panel.pack(fill=tk.BOTH, expand=True)
+        self.image_evolution_dir = None
 
         message_frame = ctk.CTkFrame(content_frame)
         message_frame.pack(fill=tk.BOTH, expand=True)
@@ -631,7 +1142,7 @@ class ModeltrainingGUI:
             message_height = int(total_height * 0.3)
 
             # Set heights to the containers that are then used to allocate space
-            plot_frame.configure(height=plot_height)
+            self.plot_frame.configure(height=plot_height)
             message_frame.configure(height=message_height)
 
         # Initial height setup
@@ -658,16 +1169,62 @@ class ModeltrainingGUI:
                 self.log_message(message)
                 self.messages_box.update_idletasks()
 
+                if r"\exp" in message:
+                    self.image_dir(message)
+
+                # Check if the message indicates the end of an epoch and update plots
+                if "Train Loss" in message:
+                    self.update_plots_after_epoch()
+                
+
             except Exception as e:
                 print(f"Error in process_queue_continuous: {e}")
                 break
+    
+    def image_dir(self, message):
+        try:
+            # Extract the part after \exp from the message
+            exp_part = message.split("\\exp")[1].split("\\")[0]  # Get the number after \exp
+            new_dir = os.path.join(self.out_dir_var.get(), "exp" + exp_part, "results", "image_evolution")
+            self.image_evolution_dir = new_dir # Update the directory
+            self.plot_panel.set_image_dir(new_dir)  # Set the new directory for the plot panel
 
+        except Exception as e:
+            print(f"Error updating output directory: {e}")
+
+    def update_plots_after_epoch(self):
+        train_loss_values, val_loss_values = self.extract_loss_values()
+
+        # Update loss plot with both train and val loss
+        if train_loss_values or val_loss_values:
+            self.plot_panel.plot_loss(train_loss_values, val_loss_values)
+
+        # Update image plot using the current directory
+        if self.image_evolution_dir:
+            self.plot_panel.update_image_list()
+            self.plot_panel.show_current_image()
+    
+    def extract_loss_values(self):
+        train_loss_values = []  # Local variables to store extracted values
+        val_loss_values = []
+        content = self.messages_box.get("1.0", tk.END)
+        lines = content.split("\n")
+        for line in lines:
+            match = re.search(r"Epoch \d+/\d+ - Train Loss: (\d+\.\d+) - Val Loss: (\d+\.\d+)", line)
+            if match:
+                try:
+                    train_loss = float(match.group(1))
+                    val_loss = float(match.group(2))
+                    train_loss_values.append(train_loss)
+                    val_loss_values.append(val_loss)
+                except ValueError:
+                    print(f"Could not convert loss values to float: {match.group(1)}, {match.group(2)}")
+        return train_loss_values, val_loss_values
+    
     def run_training_in_thread(self):
         try:
             # Retrieve values DIRECTLY from GUI variables
             model = self.model_var.get()
-            dropout = float(self.dropout_prob_var.get())
-            pooling = self.pooling_type_var.get().lower()
 
             encoder = self.encoder_var.get()
             pretrained_weights = self.pretrained_weights_var.get()
@@ -702,14 +1259,12 @@ class ModeltrainingGUI:
             epochs = int(self.epochs_var.get())
             output_dir = self.out_dir_var.get()
             normalize = self.normalize_var.get()
-            transform = self.transforms_widgets.get_sequence()
+            transform = self.transforms_widget.get_sequence()
 
 
             # Construct the command
             args = ["python", "train.py"]  # Replace with your script name
             args.extend(["--model", model])
-            args.extend(["--dropout", str(dropout)])
-            args.extend(["--pooling", pooling])
             
             args.extend(["--encoder", encoder])
             if pretrained_weights:
@@ -749,8 +1304,6 @@ class ModeltrainingGUI:
             if normalize:
                 args.append("--normalize")
 
-
-
             self.message_queue.put(f"Starting training with arguments: {' '.join(args)}") #debug
             # self.message_queue.put("Current Working Directory: " + os.getcwd()) #debug
 
@@ -780,12 +1333,93 @@ class ModeltrainingGUI:
         except ValueError as ve:
             self.message_queue.put(f"Input Error: {ve}")
         except FileNotFoundError:
-            self.message_queue.put("Error: Training script 'your_training_script.py' not found. Make sure it's in the correct directory or provide the full path.")
+            self.message_queue.put("Error: Training script 'train.py' not found. Make sure it's in the correct directory or provide the full path.")
         except Exception as e:
             exc_type, exc_obj, exc_tb = sys.exc_info() #get detailed error info
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             self.message_queue.put(f"An unexpected error occurred:\n{e}\nType: {exc_type}\nFile: {fname}\nLine: {exc_tb.tb_lineno}")
+    
+    def run_testing_in_thread(self):
+        try:
+            # Retrieve values DIRECTLY from GUI variables
+            model = self.test_model_var.get()
+            encoder = self.test_encoder_var.get()
+            model_path = self.test_model_path_var.get()
+            
+            loss_func = self.loss_func_var.get()
+            alpha = self.alpha_var.get()
+            beta = self.beta_var.get()
+            gamma = self.gamma_var.get()
+            
+            # Combo loss
+            loss_func1 = self.loss_func1_var.get()
+            loss_func1_weight = self.loss_func1_weight_var.get()
+            loss_func2 = self.loss_func2_var.get()
+            loss_func2_weight = self.loss_func2_weight_var.get()
+    
+            data_dir = self.test_data_dir_var.get()
+            batch_size = int(self.test_batch_size_var.get())
+            normalize = self.normalize_var.get()
+            transform = self.test_transforms_widget.get_sequence()
 
+
+            # Construct the command
+            args = ["python", "test.py"]  # Replace with your script name
+            args.extend(["--model", model])
+            args.extend(["--encoder", encoder])
+            args.extend(["--model_path", model_path])
+            
+            args.extend(["--loss_function", loss_func])
+            args.extend(["--alpha", str(alpha)])
+            args.extend(["--beta", str(beta)])
+            args.extend(["--gamma", str(gamma)])
+            
+            args.extend(["--loss_function1", loss_func1])
+            args.extend(["--loss_function1_weight", loss_func1_weight])
+            args.extend(["--loss_function2", loss_func2])
+            args.extend(["--loss_function2_weight", loss_func2_weight])
+            
+            args.extend(["--batch_size", str(batch_size)])
+            args.extend(["--data_dir", data_dir])
+            args.extend(["--transform", str(transform)])
+            if normalize:
+                args.append("--normalize")
+
+            self.message_queue.put(f"Starting testing with arguments: {' '.join(args)}") #debug
+            # self.message_queue.put("Current Working Directory: " + os.getcwd()) #debug
+
+            process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=os.getcwd()) #added cwd
+
+            while True:
+                output = process.stdout.readline()
+                if output == '' and process.poll() is not None:
+                    break
+                if output:
+                    output = output.strip()
+                    output = output.replace(u'\u00A0', ' ')
+
+                    self.message_queue.put(output) # Still put the output in the queue
+
+            stderr = process.stderr.read()
+            if stderr:
+                self.message_queue.put(f"Standard Error:\n{stderr}") #debug
+
+            return_code = process.poll()
+            self.message_queue.put(f"Testing process finished with return code: {return_code}") #
+            if return_code != 0:
+                self.message_queue.put("Training failed.")
+            else:
+                self.message_queue.put("Training Complete!")
+
+        except ValueError as ve:
+            self.message_queue.put(f"Input Error: {ve}")
+        except FileNotFoundError:
+            self.message_queue.put("Error: Testing script 'test.py' not found. Make sure it's in the correct directory or provide the full path.")
+        except Exception as e:
+            exc_type, exc_obj, exc_tb = sys.exc_info() #get detailed error info
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            self.message_queue.put(f"An unexpected error occurred:\n{e}\nType: {exc_type}\nFile: {fname}\nLine: {exc_tb.tb_lineno}")
+    
     def clear_last_message(self):
         self.messages_box.config(state=tk.NORMAL)
 
@@ -804,8 +1438,20 @@ class ModeltrainingGUI:
         self.messages_box.config(state=tk.DISABLED)
 
     def start_training(self):
+        self.plot_panel.reset_image_data()
+        
+        # Clear the message box
+        self.messages_box.config(state=tk.NORMAL)
+        self.messages_box.delete("1.0", tk.END)
+        self.messages_box.config(state=tk.DISABLED)
+        
         self.message_queue.put("Starting training...")
         thread = threading.Thread(target=self.run_training_in_thread)
+        thread.start()
+        
+    def start_testing(self):
+        self.message_queue.put("Starting testing...")
+        thread = threading.Thread(target=self.run_testing_in_thread)
         thread.start()
 
 
