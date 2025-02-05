@@ -85,7 +85,7 @@ class HyperparameterOptimizer:
         trainer.train()
 
         # Get the validation loss
-        val_loss = trainer.best_loss
+        val_loss = trainer.last_loss
         
          # --- CORRECT, SIMPLE SOLUTION ---
         if not np.isfinite(val_loss):  # Use numpy.isfinite() for a robust check

@@ -423,6 +423,8 @@ class Trainer():
             self.loss_plots()
             self.pr_curve()
             self.create_animation()
+        
+        self.last_loss = val_loss
     
     def loss_plots(self):
         with open(self.results_csv, mode="r", newline="") as file:

@@ -65,7 +65,7 @@ def main():
         data_dir=data_dir,
         model_class=model_class,
         hyperparameter_space=hyperparameter_space,
-        study_name="test3",  # Choose a study name
+        study_name="test4",  # Choose a study name
         output_dir=output_dir,
     )
 
