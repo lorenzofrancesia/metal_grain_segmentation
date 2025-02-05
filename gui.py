@@ -675,10 +675,6 @@ class ModeltrainingGUI:
             ctk.CTkLabel(self.warmup_options_frame, text="Warmup Steps").grid(row=0, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkEntry(self.warmup_options_frame, textvariable=self.linear_warmup_steps_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
-        elif self.warmup_var.get() == "Exponential":
-            ctk.CTkLabel(self.warmup_options_frame, text="Warmup Steps").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(self.warmup_options_frame, textvariable=self.linear_warmup_steps_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
-
         else:
             ctk.CTkLabel(self.warmup_options_frame, text="No options for selected scheduler").grid(row=0, column=0, columnspan=3, sticky="e", padx=5, pady=5)
             
@@ -887,8 +883,7 @@ class ModeltrainingGUI:
         ctk.CTkLabel(left_frame, text="Warmup").grid(row=5, column=0, sticky="e", padx=5, pady=5)
         ctk.CTkComboBox(left_frame,
                         values=["None",
-                                "Linear",
-                                "Exponential"],
+                                "Linear"],
                         variable=self.warmup_var).grid(row=5, column=1, sticky="w", padx=5, pady=5)
 
         self.warmup_options_frame = ctk.CTkFrame(left_frame)

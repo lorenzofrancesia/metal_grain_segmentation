@@ -8,6 +8,7 @@ from collections import defaultdict
 import imageio
 from sklearn.metrics import precision_recall_curve, average_precision_score
 from PIL import Image
+import logging
 
 import torch
 import torch.nn as nn
@@ -34,8 +35,6 @@ class Trainer():
                  warmup=3,
                  epochs=10,
                  output_dir="../runs",
-                #  resume=False,
-                #  resume_model_path=None,
                  early_stopping=50,
                  verbose=True, 
                  config=None
@@ -52,10 +51,7 @@ class Trainer():
         self.train_transform = train_transform
         self.batch_size = batch_size
         self.normalize = normalize
-        
-        # # Resume
-        # self.resume = resume
-        # self.resume_model_path = resume_model_path
+
         
         # Training parameters 
         self.epochs = epochs
@@ -77,18 +73,17 @@ class Trainer():
         self._initialize_csv()
         self.writer = SummaryWriter(log_dir=self.exp_dir)
         self.verbose = verbose
+        self.debugging = True
 
         # Initialize model and optimizer
         self._initialize_training()
 
     
     def _initialize_training(self):
+        self.model.to(self.device) 
+        if self.debugging:
+            print(f"[DEBUG] Model moved to device: {self.device}")
         
-        self.model.to(self.device)
-
-        # if self.resume:
-        #     self._load_checkpoint()   
-
     def _initialize_output_folder(self):
         
         exp_dir = os.path.join(self.output_dir, "exp")
@@ -141,7 +136,7 @@ class Trainer():
                 "loss_function1" : self.config.loss_function1,
                 "loss_function1_weight" : self.config.loss_function1_weight,
                 "loss_function2" : self.config.loss_function2,
-                "loss_function2" : self.config.loss_function2_weight,
+                "loss_function2_weight" : self.config.loss_function2_weight,
                 "alpha" : self.config.alpha,
                 "beta" : self.config.beta,
                 "gamma" : self.config.gamma
@@ -169,9 +164,9 @@ class Trainer():
         if not os.path.exists(self.results_csv):
             with open(self.results_csv, mode="w+", newline="") as file:
                 writer = csv.writer(file)
-                headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate", "IoU", "Dice", "Precision", "Recall" "Accuracy",  "mAP", "mIoU"]
-                writer.writerow(headers)       
-                      
+                headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate", "IoU", "Dice", "Precision", "Recall", "Accuracy",  "mAP", "mIoU"]
+                writer.writerow(headers)     
+                
     def _log_results_to_csv(self, epoch, train_loss, val_loss):
         if self.results_csv:
             with open(self.results_csv, mode="a", newline="") as file:
@@ -213,21 +208,6 @@ class Trainer():
         if self.verbose:
             print(f'Checkpoint saved at {checkpoint_path}')
     
-    def _load_checkpoint(self):
-        
-        # if not self.resume_model_path:
-        #     raise ValueError("Provide path to the checkpoint")
-        # checkpoint = torch.load(self.resume_path)
-        # self.model.load_state_dict(checkpoint['model_state_dict'])
-        # self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        # self.current_epoch = checkpoint['current_epoch']
-        # if self.lr_scheduler and checkpoint['lr_scheduler']:
-        #     self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
-        # if self.verbose:
-        #     print(f'Loaded checkpoint from {self.resume_path}')
-        
-        return
-    
     def _train_step(self, batch):
         self.model.train()
         inputs, targets = batch
@@ -243,12 +223,14 @@ class Trainer():
             loss = weight1 * loss_func1(outputs_probs, targets) + weight2 * loss_func2(outputs_probs, targets)
         else:
             loss = self.loss_function(outputs_probs, targets)  
-
         
         # Backward pass
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+        
+        if self.debugging:
+            print(f"[DEBUG] Train step computed loss: {loss.item():.4f}")
         
         return loss.item()
     
@@ -277,9 +259,7 @@ class Trainer():
                 
                 # outputs_binary = (outputs_probs > 0.5).long()
                 
-                
-                # debugging = False 
-                # if debugging:
+                # if self.debugging:
                 #     print("----------Inputs & Targets-------------")
                 #     print(f"\n Batch {batch_idx}")
                 #     print("inputs shape:", inputs.shape)
@@ -314,7 +294,7 @@ class Trainer():
         all_outputs = torch.cat(all_outputs, dim=0)
         all_targets = torch.cat(all_targets, dim=0)
         
-        # if debugging:
+        # if self.debugging:
         #     all_outputs_flat = all_outputs.view(-1)
         #     all_targets_flat = all_targets.view(-1)
             
@@ -357,8 +337,12 @@ class Trainer():
             self.current_epoch = epoch
             train_loss = 0
             
+            current_lr = self.optimizer.param_groups[0]['lr']
+            if self.debugging:
+                print(f"[DEBUG] Starting Epoch {epoch+1}/{self.total_epochs} - Current LR: {current_lr:.6f}")
+            
             # Training 
-            progress_bar = tqdm.tqdm(self.train_loader, desc=f'Epoch {epoch+1}/{self.epochs}', leave=False, file=sys.stdout)
+            progress_bar = tqdm.tqdm(self.train_loader, desc=f'Epoch {epoch+1}/{self.total_epochs}', leave=False, file=sys.stdout)
             for batch in progress_bar:
                 loss = self._train_step(batch)
                 train_loss += loss
@@ -366,6 +350,7 @@ class Trainer():
             train_loss /= len(self.train_loader)
             
             self.writer.add_scalar("Loss/train", train_loss, epoch)
+            self.writer.add_scalar("LR", current_lr, epoch)
 
             val_loss, self.metrics = self._validate()
             
@@ -373,8 +358,11 @@ class Trainer():
             for name, result in self.metrics.items():
                 self.writer.add_scalar(f"Metrics/{name}", result, epoch)
 
-            if self.current_epoch > self.warmup_epochs:
-                print(f'\nEpoch {epoch+1}/{self.epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f} - mIoU: {self.metrics["miou"]:.4f} - IoU: {self.metrics["iou"]:.4f} - mAP: {self.metrics["mAP"]:.4f} - Acc: {self.metrics["accuracy"]:.4f} - Dice: {self.metrics["dice"]:.4f}')
+            if self.current_epoch > self.warmup_epochs-1:
+                print(f'\nEpoch {epoch+1}/{self.total_epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f}'
+                      f'- mIoU: {self.metrics["miou"]:.4f} - IoU: {self.metrics["iou"]:.4f}'
+                      f'- mAP: {self.metrics["mAP"]:.4f} - Acc: {self.metrics["accuracy"]:.4f}'
+                      f'- Dice: {self.metrics["dice"]:.4f}')
                 self._log_results_to_csv(epoch+1, train_loss, val_loss)
             
                 # Early stopping
@@ -388,11 +376,18 @@ class Trainer():
                     if self.early_stopping_counter >= self.early_stopping:
                         print(f"Early stopping triggered at epoch {epoch+1}")
                         break
+            else:
+                if self.debugging:
+                    print(f"[DEBUG] Epoch {epoch+1} is in warmup phase.")
                     
             # Update lr with scheduler
             if self.lr_scheduler:
+                old_lr = self.optimizer.param_groups[0]['lr']
                 self.lr_scheduler.step()
-                print("lr=",self.optimizer.param_groups[0]['lr'])
+                new_lr = self.optimizer.param_groups[0]['lr']
+                if self.debugging:
+                    print(f"[DEBUG] LR Scheduler updated LR from {old_lr:.6f} to {new_lr:.6f}")
+                
                 
             self.image_evolution()
         

@@ -178,17 +178,15 @@ def get_optimizer(args, model):
 
 def get_warmup_scheduler(args, optimizer):
     
-    if args.warmup_scheduler is None or args.warmup_scheduler == "None":
+    if args.warmup_scheduler in [None,"None"]:
         return None
     
     elif args.warmup_scheduler == "Linear":
         
-        warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.001, end_factor=1.0, total_iters=args.warmup_steps )
-    
-    elif args.warmup_scheduler == "Exponential":
-        
-        gamma = 1000 ** (1 / args.warmup_steps)
-        warmup = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
+        warmup = torch.optim.lr_scheduler.LinearLR(optimizer,
+                                                   start_factor=0.001,
+                                                   end_factor=1.0,
+                                                   total_iters=args.warmup_steps)
         
     else:
             raise ValueError('Warmup scheduler type not recognized')
@@ -196,29 +194,39 @@ def get_warmup_scheduler(args, optimizer):
     return warmup
 
 def get_scheduler(args, optimizer, warmup=None):
-
-    if args.scheduler is None or args.scheduler == "None":
+    
+    if args.scheduler in [None,"None"]:
         return None
     
     elif args.scheduler == "LinearLR":
         
-        scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=args.start_factor, end_factor=args.end_factor, total_iters=args.iterations )
+        scheduler = torch.optim.lr_scheduler.LinearLR(optimizer,
+                                                      start_factor=args.start_factor, 
+                                                      end_factor=args.end_factor, 
+                                                      total_iters=args.iterations )
     
     elif args.scheduler == "CosineAnnealingLR":
         
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.t_max, eta_min=args.eta_min)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
+                                                               T_max=args.t_max, 
+                                                               eta_min=args.eta_min)
         
     elif args.scheduler == "StepLR":
         
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=args.gamma_lr)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 
+                                                    step_size=args.step_size,
+                                                    gamma=args.gamma_lr)
         
     else:
         raise ValueError('Scheduler type not recognized')
     
     if warmup is not None:
-        return torch.optim.lr_scheduler.SequentialLR(optimizer, schedulers=[warmup, scheduler], milestones=[args.warmup_steps])
-    else:
-        return scheduler
+        scheduler = torch.optim.lr_scheduler.SequentialLR(optimizer,
+                                                          schedulers=[warmup, scheduler],
+                                                          milestones=[args.warmup_steps])
+    
+    
+    return scheduler
 
 def get_loss_function(args):
     """
