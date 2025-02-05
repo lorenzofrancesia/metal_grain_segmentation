@@ -37,7 +37,8 @@ class Trainer():
                  output_dir="../runs",
                  early_stopping=50,
                  verbose=True, 
-                 config=None
+                 config=None,
+                 save_output=True
                  ):
         
         self.model = model
@@ -55,7 +56,7 @@ class Trainer():
         
         # Training parameters 
         self.epochs = epochs
-        self.warmup_epochs = warmup
+        self.warmup_epochs = warmup if isinstance(self.lr_scheduler, optim.lr_scheduler.SequentialLR) else 0
         self.total_epochs = self.warmup_epochs + self.epochs
         self.current_epoch = 0
         
@@ -65,16 +66,20 @@ class Trainer():
         self.early_stopping_counter = 0
         
         # Output
-        self.output_dir = output_dir
-        self._initialize_output_folder()
-        self.config = config
-        self._save_config()
+        self.save_output = save_output
+        self.writer = None
+        if self.save_output:
+            self.output_dir = output_dir
+            self._initialize_output_folder()
+            self.config = config
+            self._save_config()
         
-        self._initialize_csv()
-        self.writer = SummaryWriter(log_dir=self.exp_dir)
+            self._initialize_csv()
+            self.writer = SummaryWriter(log_dir=self.exp_dir)
+            
         self.verbose = verbose
-        self.debugging = True
-
+        self.debugging = False
+        
         # Initialize model and optimizer
         self._initialize_training()
 
@@ -106,57 +111,58 @@ class Trainer():
             os.makedirs(sub_dir, exist_ok=True)
             
     def _save_config(self):
-        config_file  = {
-            "Model Parameters:" : {
-                "model" : self.config.model,
-            },
-            "Encoder Parameters:" : {
-                "encoder" : self.config.encoder,
-                "weights" : self.config.weights
-            },
-            "Optimizer Parameters:" : {
-                "optimizer" : self.config.optimizer,
-                "lr" : self.config.lr,
-                "momentum" : self.config.momentum,
-                "weight_decay" : self.config.weight_decay
-            },
-            "Scheduler Parameters:" : {
-                "scheduler" : self.config.scheduler,
-                "start_factor" : self.config.start_factor,
-                "end_factor" : self.config.end_factor,
-                "iterations" : self.config.iterations,
-                "t_max" : self.config.t_max,
-                "eta_min" : self.config.eta_min,
-                "step_size" : self.config.step_size,
-                "gamma_lr" : self.config.gamma_lr,
-                "warmup_epochs" : self.config.warmup_steps
-            },
-            "Loss Function Parameters:" : {
-                "loss_function" : self.config.loss_function,
-                "loss_function1" : self.config.loss_function1,
-                "loss_function1_weight" : self.config.loss_function1_weight,
-                "loss_function2" : self.config.loss_function2,
-                "loss_function2_weight" : self.config.loss_function2_weight,
-                "alpha" : self.config.alpha,
-                "beta" : self.config.beta,
-                "gamma" : self.config.gamma
-            },
-            "Directories:" : {
-                "data_dir" : self.config.data_dir,
-                "output_dir" : self.config.output_dir
-            },
-            "Training Parameters:" : {
-                "epochs" : self.config.epochs,
-                "batch_size" : self.config.batch_size
-            },
-            "Dataset Parameters:" : {
-                "normalize" : self.config.normalize,
-                "transform" : self.config.transform
-            },
-        }
-        
-        with open(os.path.join(self.exp_dir, "config.yml"), "w+") as outfile:
-            yaml.dump(config_file, outfile, sort_keys=False)
+        if self.config:
+            config_file  = {
+                "Model Parameters:" : {
+                    "model" : self.config.model,
+                },
+                "Encoder Parameters:" : {
+                    "encoder" : self.config.encoder,
+                    "weights" : self.config.weights
+                },
+                "Optimizer Parameters:" : {
+                    "optimizer" : self.config.optimizer,
+                    "lr" : self.config.lr,
+                    "momentum" : self.config.momentum,
+                    "weight_decay" : self.config.weight_decay
+                },
+                "Scheduler Parameters:" : {
+                    "scheduler" : self.config.scheduler,
+                    "start_factor" : self.config.start_factor,
+                    "end_factor" : self.config.end_factor,
+                    "iterations" : self.config.iterations,
+                    "t_max" : self.config.t_max,
+                    "eta_min" : self.config.eta_min,
+                    "step_size" : self.config.step_size,
+                    "gamma_lr" : self.config.gamma_lr,
+                    "warmup_epochs" : self.config.warmup_steps
+                },
+                "Loss Function Parameters:" : {
+                    "loss_function" : self.config.loss_function,
+                    "loss_function1" : self.config.loss_function1,
+                    "loss_function1_weight" : self.config.loss_function1_weight,
+                    "loss_function2" : self.config.loss_function2,
+                    "loss_function2_weight" : self.config.loss_function2_weight,
+                    "alpha" : self.config.alpha,
+                    "beta" : self.config.beta,
+                    "gamma" : self.config.gamma
+                },
+                "Directories:" : {
+                    "data_dir" : self.config.data_dir,
+                    "output_dir" : self.config.output_dir
+                },
+                "Training Parameters:" : {
+                    "epochs" : self.config.epochs,
+                    "batch_size" : self.config.batch_size
+                },
+                "Dataset Parameters:" : {
+                    "normalize" : self.config.normalize,
+                    "transform" : self.config.transform
+                },
+            }
+            
+            with open(os.path.join(self.exp_dir, "config.yml"), "w+") as outfile:
+                yaml.dump(config_file, outfile, sort_keys=False)
     
     def _initialize_csv(self):
         self.results_csv = os.path.join(self.results_dir, "results.csv")
@@ -168,12 +174,13 @@ class Trainer():
                 writer.writerow(headers)     
                 
     def _log_results_to_csv(self, epoch, train_loss, val_loss):
-        if self.results_csv:
-            with open(self.results_csv, mode="a", newline="") as file:
-                writer = csv.writer(file)
-                row = [epoch, train_loss, val_loss, self.optimizer.param_groups[0]['lr']]
-                row += [self.metrics.get(metric, 0) for metric in self.metrics.keys()]
-                writer.writerow(row)
+        if self.save_output:
+            if self.results_csv:
+                with open(self.results_csv, mode="a", newline="") as file:
+                    writer = csv.writer(file)
+                    row = [epoch, train_loss, val_loss, self.optimizer.param_groups[0]['lr']]
+                    row += [self.metrics.get(metric, 0) for metric in self.metrics.keys()]
+                    writer.writerow(row)
     
     def _get_dataloaders(self):
         self.train_dataset = SegmentationDataset(
@@ -182,7 +189,7 @@ class Trainer():
             image_transform=self.train_transform,
             mask_transform=self.train_transform,
             normalize=self.normalize,
-            verbose=self.verbose
+            verbose=False
             )
         
         self.val_dataset = SegmentationDataset(
@@ -191,22 +198,23 @@ class Trainer():
             image_transform=self.train_transform,
             mask_transform=self.train_transform,
             normalize=self.normalize,
-            verbose=self.verbose        
+            verbose=False        
             )
         
         self.train_loader = DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
         self.val_loader = DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False)    
 
     def _save_checkpoint(self, checkpoint_path):
-        checkpoint = {
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict(),
-            'current_epoch': self.current_epoch,
-            'lr_scheduler': self.lr_scheduler.state_dict() if self.lr_scheduler else None,
-        }
-        torch.save(checkpoint, checkpoint_path)
-        if self.verbose:
-            print(f'Checkpoint saved at {checkpoint_path}')
+        if self.save_output:
+            checkpoint = {
+                'model_state_dict': self.model.state_dict(),
+                'optimizer_state_dict': self.optimizer.state_dict(),
+                'current_epoch': self.current_epoch,
+                'lr_scheduler': self.lr_scheduler.state_dict() if self.lr_scheduler else None,
+            }
+            torch.save(checkpoint, checkpoint_path)
+            if self.verbose:
+                print(f'Checkpoint saved at {checkpoint_path}')
     
     def _train_step(self, batch):
         self.model.train()
@@ -228,6 +236,11 @@ class Trainer():
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
+        
+         # --- MEMORY MANAGEMENT ---
+        del inputs, targets, outputs, outputs_probs  # Explicitly delete tensors
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()  # Clear GPU cache
         
         if self.debugging:
             print(f"[DEBUG] Train step computed loss: {loss.item():.4f}")
@@ -289,6 +302,10 @@ class Trainer():
                 # all_outputs.append(outputs_binary.detach())
                 
                 all_targets.append(targets.detach())
+                
+                del inputs, targets, outputs, outputs_probs 
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
         
         # Aggregate predicitions and targets
         all_outputs = torch.cat(all_outputs, dim=0)
@@ -327,6 +344,10 @@ class Trainer():
         # metrics_results = self.metrics.calculate_metrics(all_outputs, all_targets)
         val_loss /= len(self.val_loader)
         
+        del all_outputs, all_targets # Delete aggregated tensors
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
         return val_loss, { **metrics_results}
     
     def train(self):
@@ -348,29 +369,33 @@ class Trainer():
                 train_loss += loss
                 
             train_loss /= len(self.train_loader)
-            
-            self.writer.add_scalar("Loss/train", train_loss, epoch)
-            self.writer.add_scalar("LR", current_lr, epoch)
+
 
             val_loss, self.metrics = self._validate()
             
-            self.writer.add_scalar("Loss/val", val_loss, epoch)
-            for name, result in self.metrics.items():
-                self.writer.add_scalar(f"Metrics/{name}", result, epoch)
+            if self.save_output:
+                self.writer.add_scalar("Loss/train", train_loss, epoch)
+                self.writer.add_scalar("LR", current_lr, epoch)
+                self.writer.add_scalar("Loss/val", val_loss, epoch)
+                for name, result in self.metrics.items():
+                    self.writer.add_scalar(f"Metrics/{name}", result, epoch)
 
             if self.current_epoch > self.warmup_epochs-1:
                 print(f'\nEpoch {epoch+1}/{self.total_epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f}'
                       f'- mIoU: {self.metrics["miou"]:.4f} - IoU: {self.metrics["iou"]:.4f}'
                       f'- mAP: {self.metrics["mAP"]:.4f} - Acc: {self.metrics["accuracy"]:.4f}'
                       f'- Dice: {self.metrics["dice"]:.4f}')
-                self._log_results_to_csv(epoch+1, train_loss, val_loss)
+                if self.save_output:
+                    self._log_results_to_csv(epoch+1, train_loss, val_loss)
+                    self.image_evolution()
             
                 # Early stopping
                 if val_loss < self.best_loss:
                     self.best_loss = val_loss
-                    self.early_stopping_counter = 0
-                    best_path = f"{self.models_dir}/best.pth"
-                    self._save_checkpoint(best_path)
+                    self.early_stopping_counter = 0 
+                    if self.save_output:
+                        best_path = f"{self.models_dir}/best.pth"
+                        self._save_checkpoint(best_path)
                 else:
                     self.early_stopping_counter += 1
                     if self.early_stopping_counter >= self.early_stopping:
@@ -387,19 +412,17 @@ class Trainer():
                 new_lr = self.optimizer.param_groups[0]['lr']
                 if self.debugging:
                     print(f"[DEBUG] LR Scheduler updated LR from {old_lr:.6f} to {new_lr:.6f}")
-                
-                
-            self.image_evolution()
-        
-        if self.best_loss != val_loss: 
-            last_path = f"{self.models_dir}/last.pth"
-            self._save_checkpoint(last_path)
-        
-        self.writer.flush() 
-        self.writer.close()   
-        self.loss_plots()
-        self.pr_curve()
-        self.create_animation()
+
+        if self.save_output:
+            if self.best_loss != val_loss: 
+                last_path = f"{self.models_dir}/last.pth"
+                self._save_checkpoint(last_path)
+            
+            self.writer.flush() 
+            self.writer.close()   
+            self.loss_plots()
+            self.pr_curve()
+            self.create_animation()
     
     def loss_plots(self):
         with open(self.results_csv, mode="r", newline="") as file:
@@ -438,6 +461,7 @@ class Trainer():
         plt.ylabel("Val Loss")
         plt.title("Val Loss")
         plt.savefig(os.path.join(self.results_dir, "val_loss.png"))
+        plt.close(fig_val) #close fig
     
     def pr_curve(self):
         self.model.eval()
@@ -470,6 +494,8 @@ class Trainer():
         plt.ylabel('Precision')
         plt.title('Precision-Recall Curve')
         plt.savefig(os.path.join(self.results_dir, "pr_curve.png"))
+        plt.close() # close fig
+        del all_outputs, all_targets
     
     def image_evolution(self):
         """
@@ -533,7 +559,8 @@ class Trainer():
                 filename = f"{self.current_epoch+1}.png"
                 filepath = os.path.join(self.image_evolution_dir, filename)
                 plt.savefig(filepath)
-                plt.close()
+                plt.close() #close fig
+                del out, out_np, mask_np, image #delete vars
 
         except Exception as e:
             print(f"Error during image evolution: {e}")

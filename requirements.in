@@ -1,0 +1,16 @@
+albumentations==2.0.0
+customtkinter==5.2.2
+imageio==2.36.1
+matplotlib==3.10.0
+numpy==2.2.2
+opencv_python_headless==4.10.0.84
+optuna==4.2.0
+Pillow==11.1.0
+PyYAML==6.0.2
+PyYAML==6.0.2
+scikit_learn==1.6.1
+segmentation_models_pytorch==0.4.0
+torch==2.5.1
+torchseg==0.0.1a4
+torchvision==0.20.1
+tqdm==4.67.1

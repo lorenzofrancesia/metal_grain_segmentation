@@ -469,8 +469,8 @@ class ModeltrainingGUI:
         self.linear_warmup_steps_var = tk.StringVar(value="3")
 
         self.scheduler_var = tk.StringVar(value="None")
-        self.start_factor_var = tk.StringVar(value="0.3")
-        self.end_factor_var = tk.StringVar(value="1")
+        self.start_factor_var = tk.StringVar(value="1.0")
+        self.end_factor_var = tk.StringVar(value="0.3")
         self.iterations_var = tk.StringVar(value="10")
         self.t_max_var = tk.StringVar(value="10")
         self.eta_min_var = tk.StringVar(value="0")
