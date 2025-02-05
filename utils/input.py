@@ -29,6 +29,10 @@ def get_args_train():
     parser.add_argument('--momentum', type=float, default=0.9, help='Momentum for optimizer if supported.')
     parser.add_argument('--weight_decay', type=float, default=0, help='Weight decay for optimizer if supported.')
     
+    # Warmup parameters
+    parser.add_argument('--warmup_scheduler', type=str, default=None, help='Warmup scheduler.')
+    parser.add_argument('--warmup_steps', type=int, default=3, help='Warmup steps for LinearLR.')
+
     # Scheduler parameters
     parser.add_argument('--scheduler', type=str, default=None, help='Scheduler.')
     parser.add_argument('--start_factor', type=float, default=0.03, help='Start factor for LinearLR.')
@@ -68,8 +72,6 @@ def get_args_train():
 
     
     return parser.parse_args()
-
-
 
 def get_model(args, aux_params=None, test=False):
     
@@ -156,6 +158,10 @@ def get_optimizer(args, model):
         if args.optimizer == "Adam":
             
             optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, betas=(args.momentum, 0.999), weight_decay=args.weight_decay)
+            
+        elif args.optimizer == "AdamW":
+            
+            optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, betas=(args.momentum, 0.999), weight_decay=args.weight_decay)
         
         elif args.optimizer == "SGD":
             
@@ -170,7 +176,26 @@ def get_optimizer(args, model):
         print(e)
         raise ValueError
 
-def get_scheduler(args, optimizer):
+def get_warmup_scheduler(args, optimizer):
+    
+    if args.warmup_scheduler is None or args.warmup_scheduler == "None":
+        return None
+    
+    elif args.warmup_scheduler == "Linear":
+        
+        warmup = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.001, end_factor=1.0, total_iters=args.warmup_steps )
+    
+    elif args.warmup_scheduler == "Exponential":
+        
+        gamma = 1000 ** (1 / args.warmup_steps)
+        warmup = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=gamma)
+        
+    else:
+            raise ValueError('Warmup scheduler type not recognized')
+        
+    return warmup
+
+def get_scheduler(args, optimizer, warmup=None):
 
     if args.scheduler is None or args.scheduler == "None":
         return None
@@ -189,8 +214,11 @@ def get_scheduler(args, optimizer):
         
     else:
         raise ValueError('Scheduler type not recognized')
-        
-    return scheduler
+    
+    if warmup is not None:
+        return torch.optim.lr_scheduler.SequentialLR(optimizer, schedulers=[warmup, scheduler], milestones=[args.warmup_steps])
+    else:
+        return scheduler
 
 def get_loss_function(args):
     """
@@ -231,7 +259,6 @@ def get_loss_function_by_name(loss_func_name, args):
         return IoULoss()
     else:
         raise ValueError(f"Invalid loss function name for Combo option: {loss_func_name}")
-         
 
 def get_args_test():
     

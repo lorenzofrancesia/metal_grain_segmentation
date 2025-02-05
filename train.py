@@ -1,4 +1,4 @@
-from utils.input import get_args_train, get_model, get_optimizer, get_scheduler, get_loss_function, parse_transforms
+from utils.input import get_args_train, get_model, get_optimizer, get_scheduler, get_loss_function, parse_transforms, get_warmup_scheduler
 from utils.trainer import Trainer            
 
 
@@ -11,7 +11,11 @@ def main():
     model = get_model(args)
 
     optimizer = get_optimizer(args, model=model)
-    scheduler = get_scheduler(args, optimizer=optimizer)
+    
+    warmup = get_warmup_scheduler(args, optimizer)
+    scheduler = get_scheduler(args, optimizer=optimizer, warmup=warmup)
+    print(scheduler)
+
     
     loss_function = get_loss_function(args)
     
@@ -24,6 +28,7 @@ def main():
                       optimizer=optimizer,
                       loss_function=loss_function,
                       lr_scheduler=scheduler,
+                      warmup=args.warmup_steps,
                       epochs=args.epochs,
                       output_dir=args.output_dir,
                       normalize=args.normalize,

@@ -31,6 +31,7 @@ class Trainer():
                  loss_function=nn.BCELoss(),
                  device='cuda' if torch.cuda.is_available() else 'cpu',
                  lr_scheduler=None,
+                 warmup=3,
                  epochs=10,
                  output_dir="../runs",
                 #  resume=False,
@@ -58,8 +59,9 @@ class Trainer():
         
         # Training parameters 
         self.epochs = epochs
+        self.warmup_epochs = warmup
+        self.total_epochs = self.warmup_epochs + self.epochs
         self.current_epoch = 0
-        self.global_step = 0
         
         # Early stopping
         self.early_stopping = early_stopping
@@ -118,7 +120,7 @@ class Trainer():
                 "weights" : self.config.weights
             },
             "Optimizer Parameters:" : {
-                "optimizer" : self.config.encoder,
+                "optimizer" : self.config.optimizer,
                 "lr" : self.config.lr,
                 "momentum" : self.config.momentum,
                 "weight_decay" : self.config.weight_decay
@@ -131,17 +133,18 @@ class Trainer():
                 "t_max" : self.config.t_max,
                 "eta_min" : self.config.eta_min,
                 "step_size" : self.config.step_size,
-                "gamma_lr" : self.config.gamma_lr
+                "gamma_lr" : self.config.gamma_lr,
+                "warmup_epochs" : self.config.warmup_steps
             },
             "Loss Function Parameters:" : {
                 "loss_function" : self.config.loss_function,
-                "alpha" : self.config.alpha,
-                "beta" : self.config.beta,
-                "gamma" : self.config.gamma,
                 "loss_function1" : self.config.loss_function1,
                 "loss_function1_weight" : self.config.loss_function1_weight,
                 "loss_function2" : self.config.loss_function2,
                 "loss_function2" : self.config.loss_function2_weight,
+                "alpha" : self.config.alpha,
+                "beta" : self.config.beta,
+                "gamma" : self.config.gamma
             },
             "Directories:" : {
                 "data_dir" : self.config.data_dir,
@@ -204,7 +207,6 @@ class Trainer():
             'model_state_dict': self.model.state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict(),
             'current_epoch': self.current_epoch,
-            'global_step': self.global_step,
             'lr_scheduler': self.lr_scheduler.state_dict() if self.lr_scheduler else None,
         }
         torch.save(checkpoint, checkpoint_path)
@@ -219,7 +221,6 @@ class Trainer():
         # self.model.load_state_dict(checkpoint['model_state_dict'])
         # self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         # self.current_epoch = checkpoint['current_epoch']
-        # self.global_step = checkpoint['global_step']
         # if self.lr_scheduler and checkpoint['lr_scheduler']:
         #     self.lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
         # if self.verbose:
@@ -352,7 +353,7 @@ class Trainer():
         # Initialize dataloaders 
         self._get_dataloaders()
         
-        for epoch in range(self.current_epoch, self.epochs):
+        for epoch in range(self.current_epoch, self.total_epochs):
             self.current_epoch = epoch
             train_loss = 0
             
@@ -361,12 +362,10 @@ class Trainer():
             for batch in progress_bar:
                 loss = self._train_step(batch)
                 train_loss += loss
-                self.global_step += 1
                 
             train_loss /= len(self.train_loader)
             
             self.writer.add_scalar("Loss/train", train_loss, epoch)
-            
 
             val_loss, self.metrics = self._validate()
             
@@ -374,28 +373,26 @@ class Trainer():
             for name, result in self.metrics.items():
                 self.writer.add_scalar(f"Metrics/{name}", result, epoch)
 
-            if self.verbose:
+            if self.current_epoch > self.warmup_epochs:
                 print(f'\nEpoch {epoch+1}/{self.epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f} - mIoU: {self.metrics["miou"]:.4f} - IoU: {self.metrics["iou"]:.4f} - mAP: {self.metrics["mAP"]:.4f} - Acc: {self.metrics["accuracy"]:.4f} - Dice: {self.metrics["dice"]:.4f}')
-            self._log_results_to_csv(epoch+1, train_loss, val_loss)
+                self._log_results_to_csv(epoch+1, train_loss, val_loss)
             
-
-            
-            # Early stopping
-            if val_loss < self.best_loss:
-                self.best_loss = val_loss
-                self.early_stopping_counter = 0
-                best_path = f"{self.models_dir}/best.pth"
-                self._save_checkpoint(best_path)
-                
-            else:
-                self.early_stopping_counter += 1
-                if self.early_stopping_counter >= self.early_stopping:
-                    print(f"Early stopping triggered at epoch {epoch+1}")
-                    break
+                # Early stopping
+                if val_loss < self.best_loss:
+                    self.best_loss = val_loss
+                    self.early_stopping_counter = 0
+                    best_path = f"{self.models_dir}/best.pth"
+                    self._save_checkpoint(best_path)
+                else:
+                    self.early_stopping_counter += 1
+                    if self.early_stopping_counter >= self.early_stopping:
+                        print(f"Early stopping triggered at epoch {epoch+1}")
+                        break
                     
             # Update lr with scheduler
             if self.lr_scheduler:
                 self.lr_scheduler.step()
+                print("lr=",self.optimizer.param_groups[0]['lr'])
                 
             self.image_evolution()
         

@@ -45,17 +45,21 @@ class Tester():
         self._initialize()
     
     def _initialize(self):
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
+        
         self.model.to(self.device)
         self._load_model()
         
-        if not os.path.exists(self.output_dir):
-            os.makedirs(self.output_dir)
+        
         
         
     def _load_model(self):
         if not self.model_path:
             raise ValueError("Provide path to the checkpoint")
+        print("Loading model...")
         checkpoint = torch.load(self.model_path)
+        print("Loading state dictionary...")
         self.model.load_state_dict(checkpoint['model_state_dict'])
         
             
