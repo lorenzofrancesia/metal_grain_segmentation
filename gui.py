@@ -499,8 +499,6 @@ class ModeltrainingGUI:
         self.normalize_var = tk.BooleanVar(value=False)
         
         # testing variables
-        self.test_model_var = tk.StringVar(value="U-Net")
-        self.test_encoder_var = tk.StringVar(value="resnet50")
         self.test_model_path_var = tk.StringVar(value="")
         self.test_data_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\data\\test")
         self.test_batch_size_var = tk.StringVar(value="6")
@@ -652,20 +650,20 @@ class ModeltrainingGUI:
             if update_function:
                 update_function()
 
-    def update_model_options(self, *args):
-        for widget in self.model_options_frame.winfo_children():
+    def update_model_options(self, calling_frame, *args):
+        for widget in calling_frame.winfo_children():
             widget.destroy()
 
         if self.model_var.get() == "U-Net" or self.model_var.get() == "U-Net++":
-            ctk.CTkLabel(self.model_options_frame, text="Attention").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkComboBox(self.model_options_frame, values=["None","scse"], variable=self.attention_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(calling_frame, text="Attention").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkComboBox(calling_frame, values=["None","scse"], variable=self.attention_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
-            ctk.CTkLabel(self.model_options_frame, text="Batchnorm").grid(row=1, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkComboBox(self.model_options_frame, values=["True","inplace", "False"], variable=self.batchnorm_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(calling_frame, text="Batchnorm").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkComboBox(calling_frame, values=["True","inplace", "False"], variable=self.batchnorm_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
         else:
-            ctk.CTkLabel(self.model_options_frame, text="BatchNorm").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkComboBox(self.model_options_frame, values=["True","inplace", "False"], variable=self.batchnorm_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(calling_frame, text="BatchNorm").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkComboBox(calling_frame, values=["True","inplace", "False"], variable=self.batchnorm_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
             
     def update_optimizer_options(self, *args):
         for widget in self.optimizer_options_frame.winfo_children():
@@ -880,9 +878,9 @@ class ModeltrainingGUI:
                                                         ], variable=self.model_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
         self.model_options_frame = ctk.CTkFrame(left_frame)
         model_options_button = ctk.CTkButton(left_frame, text="\u25BC", width=30)
-        model_options_button.configure(command=lambda btn=model_options_button: self.toggle_options(self.model_options_frame, row=1, button=btn, update_function=self.update_model_options))
+        model_options_button.configure(command=lambda btn=model_options_button: self.toggle_options(self.model_options_frame, row=1, button=btn, update_function=self.update_model_options(self.model_options_frame)))
         model_options_button.grid(row=0, column=2, sticky="w", padx=5, pady=5)
-        self.model_var.trace_add("write", self.update_model_options)
+        self.model_var.trace_add("write",lambda *args:  self.update_model_options(self.model_options_frame, *args))
 
         ###############################################################################################################
         # Encoder selection and dropdown
@@ -961,7 +959,6 @@ class ModeltrainingGUI:
         self.loss_func_var.trace_add("write", lambda *args: self.update_loss_function_options(self.loss_function_options_frame, *args))
 
         ###############################################################################################################
-
         # Data Dir and Out Dir with Browse Buttons
         for i, dir_label in enumerate(["Data Dir", "Out Dir"], start=12):
             ctk.CTkLabel(left_frame, text=dir_label).grid(row=i, column=0, sticky="e", padx=5, pady=5)
@@ -1005,6 +1002,7 @@ class ModeltrainingGUI:
         left_frame = ctk.CTkScrollableFrame(container_frame, width=300)
         left_frame.pack(fill=tk.BOTH, expand=True)
         
+        ###############################################################################################################
         # Model selection dropdown with toggle button
         ctk.CTkLabel(left_frame, text="Model").grid(row=0, column=0, sticky="e", padx=5, pady=5)
         model_dropdown = ctk.CTkComboBox(left_frame, values=["U-Net",
@@ -1016,10 +1014,16 @@ class ModeltrainingGUI:
                                                         "PAN",
                                                         "DeepLabV3",
                                                         "DeepLabV3+"
-                                                        ], variable=self.test_model_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+                                                        ], variable=self.model_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        self.test_model_options_frame = ctk.CTkFrame(left_frame)
+        model_options_button = ctk.CTkButton(left_frame, text="\u25BC", width=30)
+        model_options_button.configure(command=lambda btn=model_options_button: self.toggle_options(self.test_model_options_frame, row=1, button=btn, update_function=self.update_model_options(self.test_model_options_frame)))
+        model_options_button.grid(row=0, column=2, sticky="w", padx=5, pady=5)
+        self.model_var.trace_add("write",lambda *args:  self.update_model_options(self.test_model_options_frame, *args))
         
+        ###############################################################################################################
         # Encoder selection and dropdown
-        ctk.CTkLabel(left_frame, text="Encoder").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkLabel(left_frame, text="Encoder").grid(row=2, column=0, sticky="e", padx=5, pady=5)
         encoder_dropdown = ctk.CTkComboBox(left_frame, values=["efficientnet_b8",
                                                             "efficientnetv2_xl",
                                                             "resnet152",
@@ -1030,25 +1034,39 @@ class ModeltrainingGUI:
                                                             "swinv2_cr_giant_38",
                                                             "vit_giant_patch14_clip_224",
                                                             "vit_giant_patch14_reg4_dinov2"
-                                                            ], variable=self.test_encoder_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+                                                            ], variable=self.encoder_var).grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        self.test_encoder_options_frame = ctk.CTkFrame(left_frame)
+        encoder_options_button = ctk.CTkButton(left_frame, text="\u25BC", width=30,)
+        encoder_options_button.configure( command=lambda btn=encoder_options_button: self.toggle_options(self.test_encoder_options_frame, row=3, button=btn))
+        encoder_options_button.grid(row=2, column=2, sticky="w", padx=5, pady=5)
 
-        ctk.CTkLabel(left_frame, text="Model Path").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+        # Widgets for encoder options
+        ctk.CTkLabel(self.test_encoder_options_frame, text="Pretrained Weights").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkSwitch(self.test_encoder_options_frame, text=None, variable=self.pretrained_weights_var, onvalue=True, offvalue=False).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+
+        ###############################################################################################################
+        # Model path
+        ctk.CTkLabel(left_frame, text="Model Path").grid(row=4, column=0, sticky="e", padx=5, pady=5)
         dir_entry = ctk.CTkEntry(left_frame, textvariable=self.test_model_path_var)
-        dir_entry.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        dir_entry.grid(row=4, column=1, sticky="w", padx=5, pady=5)
         browse_button = ctk.CTkButton(left_frame, text="...", width=30, command=lambda entry=dir_entry: self.browse_file(entry))
-        browse_button.grid(row=2, column=2, sticky="w", padx=5, pady=5)
+        browse_button.grid(row=4, column=2, sticky="w", padx=5, pady=5)
         
-        ctk.CTkLabel(left_frame, text="Loss function").grid(row=3, column=0, sticky="e", padx=5, pady=5)
+        ###############################################################################################################
+        # Loss function
+        ctk.CTkLabel(left_frame, text="Loss function").grid(row=5, column=0, sticky="e", padx=5, pady=5)
         loss_function_dropdown = ctk.CTkComboBox(left_frame, values=["FocalTversky",
                                                                      "Tversky",
                                                                      "IoU",
-                                                                     "Combo"], variable=self.loss_func_var).grid(row=3, column=1, sticky="w", padx=5, pady=5)
+                                                                     "Combo"], variable=self.loss_func_var).grid(row=5, column=1, sticky="w", padx=5, pady=5)
         self.test_loss_function_options_frame = ctk.CTkFrame(left_frame)
         loss_function_option_button = ctk.CTkButton(left_frame, text="\u25BC", width=30, )
-        loss_function_option_button.configure(command=lambda btn=loss_function_option_button: self.toggle_options(self.test_loss_function_options_frame, row=4, button=btn, update_function=self.update_loss_function_options(self.test_loss_function_options_frame)))
-        loss_function_option_button.grid(row=3, column=2, sticky="w", padx=5, pady=5)
+        loss_function_option_button.configure(command=lambda btn=loss_function_option_button: self.toggle_options(self.test_loss_function_options_frame, row=6, button=btn, update_function=self.update_loss_function_options(self.test_loss_function_options_frame)))
+        loss_function_option_button.grid(row=5, column=2, sticky="w", padx=5, pady=5)
         self.loss_func_var.trace_add("write", lambda *args: self.update_loss_function_options(self.test_loss_function_options_frame, *args))
         
+        ###############################################################################################################
+        # Data dir and other
         ctk.CTkLabel(left_frame, text="Data Dir").grid(row=5, column=0, sticky="e", padx=5, pady=5)
         dir_entry = ctk.CTkEntry(left_frame, textvariable=self.test_data_dir_var)
         dir_entry.grid(row=5, column=1, sticky="w", padx=5, pady=5)
@@ -1426,13 +1444,16 @@ class ModeltrainingGUI:
     def run_testing_in_thread(self):
         try:
             # Retrieve values DIRECTLY from GUI variables
-            model = self.test_model_var.get()
-            encoder = self.test_encoder_var.get()
+            model = self.model_var.get()
+            attention = self.attention_var.get()
+            batchnorm = self.batchnorm_var.get()
+            encoder = self.encoder_var.get()
+            weights = self.pretrained_weights_var.get()
             model_path = self.test_model_path_var.get()
             
             loss_func = self.loss_func_var.get()
             alpha = self.alpha_var.get()
-            beta = self.beta_var.get()
+            beta = self.beta_var.get()  
             gamma = self.gamma_var.get()
             
             # Combo loss
@@ -1450,7 +1471,11 @@ class ModeltrainingGUI:
             # Construct the command
             args = ["python", "test.py"]  # Replace with your script name
             args.extend(["--model", model])
+            args.extend(["--attention", attention])
+            args.extend(["--batchnorm", batchnorm])
             args.extend(["--encoder", encoder])
+            if bool(weights):
+                args.append("--weights")
             args.extend(["--model_path", model_path])
             
             args.extend(["--loss_function", loss_func])

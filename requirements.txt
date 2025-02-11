@@ -3,7 +3,6 @@ customtkinter==5.2.2
 gudhi==3.10.1
 imageio==2.36.1
 matplotlib==3.10.0
-numpy==2.2.2
 opencv_python_headless==4.10.0.84
 optuna==4.2.0
 Pillow==11.1.0

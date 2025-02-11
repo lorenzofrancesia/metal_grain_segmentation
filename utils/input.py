@@ -292,9 +292,15 @@ def get_loss_function_by_name(loss_func_name, args):
 def get_args_test():
     
     parser = argparse.ArgumentParser(description='Test a U-Net model')
-    parser.add_argument('--model', type=str, default='unet', help='Model for testing')
-    parser.add_argument('--encoder', type=str, default='resnet152', help='Model to train.')
+    # Model parameters 
+    parser.add_argument('--model', type=str, default='Unet', help='Model to train')
+    parser.add_argument('--attention', type=str, default='None', help='Attention type')
+    parser.add_argument('--batchnorm', type=str, default='True', help='Batchnorm')
     parser.add_argument('--model_path', type=str, help='Path to the model to test')
+    
+    # Encoder parameters
+    parser.add_argument('--encoder', type=str, default='resnet152', help='Model to train.')
+    parser.add_argument('--weights', default=None, action="store_true", help="Utilize pretrained weights.")
     
     # Loss function parameters
     parser.add_argument('--loss_function', type=str, default='FocalTversky', help='Loss Function.')

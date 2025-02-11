@@ -9,6 +9,11 @@ def main():
     args = get_args_train()   
 
     model = get_model(args)
+    
+    freeze = False
+    if freeze:
+        for param in model.encoder.parameterws():
+            param.requires_grad = False
 
     optimizer = get_optimizer(args, model=model)
     

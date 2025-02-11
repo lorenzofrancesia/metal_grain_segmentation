@@ -217,7 +217,7 @@ class Tester():
                 axes[0].axis("off")
 
                 # Plot Predictions
-                axes[1].imshow(preds, cmap="gray")
+                axes[1].imshow((preds>0.5), cmap="gray")
                 axes[1].set_title("Output")
                 axes[1].axis("off")
 
