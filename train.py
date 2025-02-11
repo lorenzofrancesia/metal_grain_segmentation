@@ -14,9 +14,7 @@ def main():
     
     warmup = get_warmup_scheduler(args, optimizer)
     scheduler = get_scheduler(args, optimizer=optimizer, warmup=warmup)
-    print(scheduler)
 
-    
     loss_function = get_loss_function(args)
     
     transform = parse_transforms(args.transform)

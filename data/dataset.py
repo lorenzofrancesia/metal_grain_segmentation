@@ -19,7 +19,7 @@ class SegmentationDataset(Dataset):
         mask_transform (callable, optional): A function/transform to apply to the masks. Default is transforms.ToTensor().
         normalize (bool, optional): Whether to normalize the images. Default is False.
     """
-    def __init__(self, image_dir, mask_dir, image_transform=transforms.ToTensor(), mask_transform=transforms.ToTensor(), normalize=False, verbose=False):
+    def __init__(self, image_dir, mask_dir, image_transform=transforms.ToTensor(), mask_transform=transforms.ToTensor(), normalize=False, verbose=False, mean=None, std=None):
         
         self.image_dir = image_dir
         self.mask_dir = mask_dir
@@ -27,9 +27,12 @@ class SegmentationDataset(Dataset):
         self.mask_paths = sorted(os.listdir(mask_dir))
         self.image_transform = image_transform
         self.mask_transform = mask_transform
-        self.mean = None
-        self.std = None
+        self.mean = mean
+        self.std = std
         self.normalize = normalize
+        
+        if self.mean is not None and self.std is not None:# and verbose:
+            print("Mean and std obtained from different dataset.")
         
         self._validate_dataset()
         
@@ -58,7 +61,7 @@ class SegmentationDataset(Dataset):
             normalize_transform = transforms.Normalize(mean=self.mean, std=self.std)
             image = normalize_transform(image)
         
-        # mask = 1 - mask
+        mask = 1 - mask
          
         return image, mask
     

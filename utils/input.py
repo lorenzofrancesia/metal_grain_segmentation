@@ -9,6 +9,7 @@ import ast
 #Models
 from loss.tversky import TverskyLoss, FocalTverskyLoss
 from loss.iou import IoULoss
+from loss.topoloss import TopologicalLoss
 
 def get_args_train():
     
@@ -16,8 +17,8 @@ def get_args_train():
     
     # Model parameters 
     parser.add_argument('--model', type=str, default='Unet', help='Model to train')
-    # parser.add_argument("--dropout", type=float, default=0, help='Dropout probability.')
-    # parser.add_argument("--pooling",  type=str, default='max', help='Type of pooling used.')
+    parser.add_argument('--attention', type=str, default='None', help='Attention type')
+    parser.add_argument('--batchnorm', type=str, default='True', help='Batchnorm')
     
     # Encoder parameters
     parser.add_argument('--encoder', type=str, default='resnet152', help='Model to train.')
@@ -48,6 +49,7 @@ def get_args_train():
     parser.add_argument('--alpha', type=float, default=0.7, help='Alpha for FocalTversky and Tversky.')
     parser.add_argument('--beta', type=float, default=0.3, help='Beta for FocalTversky and Tversky.')
     parser.add_argument('--gamma', type=float, default=1.3333, help='Gamma for FocalTversky.')
+    parser.add_argument('--topoloss_patch', type=int, default=64, help='Patch size for Topoloss.')
     
     parser.add_argument('--loss_function1', type=str, default='FocalTversky', help='Loss Function 1 for combo loss.')
     parser.add_argument('--loss_function1_weight', type=float, default=0.5, help='Weight of loss Function 1 for combo loss.')
@@ -77,71 +79,86 @@ def get_model(args, aux_params=None, test=False):
     
     if not test:
         weights = "imagenet" if bool(args.weights) else None
+        attention = None if args.attention == "None" else args.attention
+        batchnorm = args.batchnorm
     else:
-        weights = None
+        weights = "imagenet"
+        attention = None
+        batchnorm = True
         
     try:
         if args.model == 'U-Net' or args.model == 'Unet':
             model = torchseg.Unet(
                 encoder_name=args.encoder,
                 encoder_weights=weights,
-                aux_params=aux_params
+                decoder_attention_type=attention,
+                decoder_use_batchnorm=batchnorm, 
+                aux_params=aux_params,
                 )
             
         elif args.model == 'U-Net++':
             model = torchseg.UnetPlusPlus(
                 encoder_name=args.encoder,
                 encoder_weights=weights,
-                aux_params=aux_params
+                aux_params=aux_params,
+                decoder_attention_type=attention,
+                decoder_use_batchnorm=batchnorm
                 )
             
         elif args.model == 'MAnet':
             model = torchseg.MAnet(
                 encoder_name=args.encoder,
                 encoder_weights=weights,
-                aux_params=aux_params
+                aux_params=aux_params,
+                decoder_use_batchnorm=batchnorm
                 )   
             
         elif args.model == 'LinkNet':
             model = torchseg.Linknet(
                 encoder_name=args.encoder,
                 encoder_weights=weights,
-                aux_params=aux_params
+                aux_params=aux_params,
+                decoder_use_batchnorm=batchnorm
                 )  
         
         elif args.model == 'FPN':
             model = torchseg.FPN(
                 encoder_name=args.encoder,
                 encoder_weights=weights,
-                aux_params=aux_params
+                aux_params=aux_params,
+                decoder_use_batchnorm=batchnorm
                 ) 
             
         elif args.model == 'PSPNet':
             model = torchseg.PSPNet(
                 encoder_name=args.encoder,
                 encoder_weights=weights,
-                aux_params=aux_params
+                aux_params=aux_params,
+                decoder_use_batchnorm=batchnorm
                 )    
             
         elif args.model == 'PAN':
             model = torchseg.PAN(
                 encoder_name=args.encoder,
                 encoder_weights=weights,
-                aux_params=aux_params
+                aux_params=aux_params,
+                decoder_use_batchnorm=batchnorm
                 )    
             
         elif args.model == 'DeepLabV3':
             model = torchseg.DeepLabV3(
                 encoder_name=args.encoder,
                 encoder_weights=weights,
-                aux_params=aux_params
+                aux_params=aux_params,
+                decoder_use_batchnorm=batchnorm
                 )  
             
         elif args.model == 'DeepLabV3+':
             model = torchseg.DeepLabV3Plus(
                 encoder_name=args.encoder,
                 encoder_weights=weights,
-                aux_params=aux_params
+                aux_params=aux_params,
+                decoder_use_batchnorm=batchnorm
                 )          
         
         else:
@@ -246,6 +263,8 @@ def get_loss_function(args):
         return TverskyLoss(alpha=args.alpha, beta=args.beta)
     elif args.loss_function == "IoU":
         return IoULoss()
+    elif args.loss_function == "Topoloss":
+        return TopologicalLoss()
     elif args.loss_function == "Combo":
         loss_func1 = get_loss_function_by_name(args.loss_function1, args)
         loss_func2 = get_loss_function_by_name(args.loss_function2, args)
@@ -265,6 +284,8 @@ def get_loss_function_by_name(loss_func_name, args):
         return TverskyLoss(alpha=args.alpha, beta=args.beta)
     elif loss_func_name == "IoU":
         return IoULoss()
+    elif loss_func_name == "Topoloss":
+        return TopologicalLoss(topo_size=args.topoloss_patch)
     else:
         raise ValueError(f"Invalid loss function name for Combo option: {loss_func_name}")
 
@@ -292,8 +313,6 @@ def get_args_test():
     parser.add_argument('--transform', type=str, default='transforms.ToTensor', help='Transform to apply to the dataset.')
     
     return parser.parse_args()
-
-
 
 def parse_transforms(transform_strings_str):
     """

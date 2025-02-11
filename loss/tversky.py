@@ -1,7 +1,5 @@
-import numpy as np
-import torch
 import torch.nn as nn
-import torch.nn.functional as F
+
 
 class TverskyLoss(nn.Module):
     def __init__(self, alpha=0.7, beta=0.3):
@@ -54,3 +52,6 @@ class FocalTverskyLoss(nn.Module):
         Tversky = (TP + smooth) / (TP + self.alpha*FP + self.beta*FN + smooth)  
         
         return (1 - Tversky)**(1/self.gamma)
+    
+    
+    

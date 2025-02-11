@@ -8,7 +8,7 @@ from collections import defaultdict
 import imageio
 from sklearn.metrics import precision_recall_curve, average_precision_score
 from PIL import Image
-import logging
+import numpy as np
 
 import torch
 import torch.nn as nn
@@ -19,6 +19,7 @@ from torch.utils.tensorboard import SummaryWriter
 import segmentation_models_pytorch as smp
 
 from data.dataset import SegmentationDataset
+from utils.metrics import BinaryMetrics
 
 class Trainer():
     
@@ -115,6 +116,8 @@ class Trainer():
             config_file  = {
                 "Model Parameters:" : {
                     "model" : self.config.model,
+                    "attention" : self.config.attention,
+                    "batchnorm" : self.config.batchnorm
                 },
                 "Encoder Parameters:" : {
                     "encoder" : self.config.encoder,
@@ -166,13 +169,18 @@ class Trainer():
     
     def _initialize_csv(self):
         self.results_csv = os.path.join(self.results_dir, "results.csv")
-        
+
         if not os.path.exists(self.results_csv):
             with open(self.results_csv, mode="w+", newline="") as file:
                 writer = csv.writer(file)
-                headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate", "IoU", "Dice", "Precision", "Recall", "Accuracy",  "mAP", "mIoU"]
-                writer.writerow(headers)     
-                
+
+                # Get metric names from BinaryMetrics class
+                binary_metrics = BinaryMetrics()
+                metric_names = list(binary_metrics.metrics.keys())  # Get a list of the metric names
+
+                headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate"] + metric_names + ["mAP", "mIoU"] # Modified Header
+                writer.writerow(headers)
+               
     def _log_results_to_csv(self, epoch, train_loss, val_loss):
         if self.save_output:
             if self.results_csv:
@@ -198,19 +206,23 @@ class Trainer():
             image_transform=self.train_transform,
             mask_transform=self.train_transform,
             normalize=self.normalize,
-            verbose=False        
+            verbose=False,  
+            mean=self.train_dataset.mean,
+            std=self.train_dataset.std
             )
         
         self.train_loader = DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
-        self.val_loader = DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False)    
+        self.val_loader = DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False)  
+        
+        if self.save_output:
+            self.image_evolution_idx = np.random.randint(0, len(self.val_dataset)-1)
 
     def _save_checkpoint(self, checkpoint_path):
         if self.save_output:
             checkpoint = {
                 'model_state_dict': self.model.state_dict(),
-                'optimizer_state_dict': self.optimizer.state_dict(),
-                'current_epoch': self.current_epoch,
-                'lr_scheduler': self.lr_scheduler.state_dict() if self.lr_scheduler else None,
+                'dataset_mean': self.train_dataset.mean,
+                'dataset_std': self.train_dataset.std
             }
             torch.save(checkpoint, checkpoint_path)
             if self.verbose:
@@ -223,7 +235,6 @@ class Trainer():
     
         # Forward pass
         outputs = self.model(inputs)
-
         outputs_probs = torch.sigmoid(outputs)     
         
         if isinstance(self.loss_function, list):
@@ -235,6 +246,8 @@ class Trainer():
         # Backward pass
         self.optimizer.zero_grad()
         loss.backward()
+        
+        # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optimizer.step()
         
          # --- MEMORY MANAGEMENT ---
@@ -320,28 +333,25 @@ class Trainer():
         #         raise ValueError("All output values should be between 0 and 1.")
         #     if not torch.all((all_targets_flat >= 0) & (all_targets_flat <= 1)):
         #         raise ValueError("All target values should be between 0 and 1.")
-        
         metrics_results = defaultdict()
-        
-        tp, fp, fn, tn = smp.metrics.get_stats(all_outputs, all_targets, mode="binary", threshold=0.5)
-        
-        metrics_results["iou"]= smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro" ).item()
-        metrics_results["dice"] = smp.metrics.f1_score(tp, tn, fn ,tn, reduction="micro").item()
-        metrics_results["precision"] = smp.metrics.precision(tp, fp, fn, tn, reduction="micro").item()
-        metrics_results["recall"]= smp.metrics.recall(tp, fp, fn, tn, reduction="micro").item()
-        metrics_results["accuracy"] = smp.metrics.accuracy(tp, fp, fn, tn, reduction="micro").item()
-        metrics_results["mAP"] = average_precision_score(all_targets.numpy().flatten(), all_outputs.numpy().flatten())
-        
-        
+        binary_metrics = BinaryMetrics()
+
+        # Calculate metrics at 0.5 threshold
+        results_05 = binary_metrics.calculate_metrics(all_outputs, all_targets, threshold=0.5)
+        for metric_name, value in results_05.items():
+            metrics_results[metric_name] = value
+
+        # Calculate mIoU 
         thresholds = [0.1, 0.3, 0.5, 0.7, 0.9]
         metrics_results["miou"] = 0
         for threshold in thresholds:
-            tp, fp, fn, tn = smp.metrics.get_stats(all_outputs, all_targets, mode="binary", threshold=threshold)
-            metrics_results["miou"] += smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro" ).item()
+            results_thresh = binary_metrics.calculate_metrics(all_outputs, all_targets, threshold=threshold)
+            metrics_results["miou"] += results_thresh["IoU"]  # Access IoU from your class
         metrics_results["miou"] /= len(thresholds)
+
+        # Calculate AP
+        metrics_results["AP"] = average_precision_score(all_targets.cpu().numpy().flatten(), all_outputs.cpu().numpy().flatten())
             
-            
-        # metrics_results = self.metrics.calculate_metrics(all_outputs, all_targets)
         val_loss /= len(self.val_loader)
         
         del all_outputs, all_targets # Delete aggregated tensors
@@ -377,16 +387,20 @@ class Trainer():
                 self.writer.add_scalar("Loss/train", train_loss, epoch)
                 self.writer.add_scalar("LR", current_lr, epoch)
                 self.writer.add_scalar("Loss/val", val_loss, epoch)
-                for name, result in self.metrics.items():
+
+                # Log each metric individually
+                for name, result in self.metrics.items():  # Iterate through the metrics dictionary
                     self.writer.add_scalar(f"Metrics/{name}", result, epoch)
 
-            if self.current_epoch > self.warmup_epochs-1:
-                print(f'\nEpoch {epoch+1}/{self.total_epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f}'
-                      f'- mIoU: {self.metrics["miou"]:.4f} - IoU: {self.metrics["iou"]:.4f}'
-                      f'- mAP: {self.metrics["mAP"]:.4f} - Acc: {self.metrics["accuracy"]:.4f}'
-                      f'- Dice: {self.metrics["dice"]:.4f}')
+            if self.current_epoch > self.warmup_epochs - 1:
+                # Print metrics - dynamically access metric names
+                print_str = f'\nEpoch {epoch+1}/{self.total_epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f}'
+                for name, result in self.metrics.items():
+                    print_str += f' - {name.capitalize()}: {result:.4f}'  # Add each metric to the string
+                print(print_str)
+
                 if self.save_output:
-                    self._log_results_to_csv(epoch+1, train_loss, val_loss)
+                    self._log_results_to_csv(epoch + 1, train_loss, val_loss)  # Pass metrics to _log_results_to_csv
                     self.image_evolution()
             
                 # Early stopping
@@ -421,7 +435,7 @@ class Trainer():
             self.writer.flush() 
             self.writer.close()   
             self.loss_plots()
-            self.pr_curve()
+            self.find_best_threshold()
             self.create_animation()
         
         self.last_loss = val_loss
@@ -465,43 +479,20 @@ class Trainer():
         plt.savefig(os.path.join(self.results_dir, "val_loss.png"))
         plt.close(fig_val) #close fig
     
-    def pr_curve(self):
-        self.model.eval()
-        val_loss = 0
-        all_outputs = []
-        all_targets = []
-
-        with torch.inference_mode():
-            for batch_idx, batch in enumerate(self.val_loader):
-                inputs, targets = batch
-                inputs, targets = inputs.to(self.device), targets.to(self.device)
-
-                outputs = self.model(inputs)
-                outputs_probs = torch.sigmoid(outputs)
-                
-                targets = targets.long()
-
-                all_outputs.append(outputs_probs.detach())
-                all_targets.append(targets.detach())
-        
-        # Aggregate predicitions and targets
-        all_outputs = torch.cat(all_outputs, dim=0).numpy().flatten()
-        all_targets = torch.cat(all_targets, dim=0).numpy().flatten()
-
-        
-        precision, recall, _ = precision_recall_curve(all_targets, all_outputs, pos_label=1)
+    def pr_curve(self, outputs, targets):
+        precision, recall, _ = precision_recall_curve(targets, outputs, pos_label=1)
         plt.figure(figsize=(8, 6))
-        plt.plot(recall, precision, label='PR Curve')
+        plt.plot(recall[1:], precision[1:], label='PR Curve')
+        plt.ylim((0,1))
         plt.xlabel('Recall')
         plt.ylabel('Precision')
         plt.title('Precision-Recall Curve')
         plt.savefig(os.path.join(self.results_dir, "pr_curve.png"))
         plt.close() # close fig
-        del all_outputs, all_targets
     
     def image_evolution(self):
         """
-        This function visualizes the output of the model during training.
+        Visualizes the model's output during training, adding a small amount of space around images.
 
         Args:
             results_dir (str): Path to the directory for saving results.
@@ -510,59 +501,52 @@ class Trainer():
             device (str): Device to use for computations (e.g., 'cpu' or 'cuda').
         """
 
-        # Create directory if it doesn't exist
         self.image_evolution_dir = os.path.join(self.results_dir, "image_evolution")
         if not os.path.exists(self.image_evolution_dir):
             os.makedirs(self.image_evolution_dir)
 
         try:
-            # Get image and mask
-            image, mask = self.val_dataset[0]
+            image, mask = self.val_dataset[self.image_evolution_idx]
             image = image.to(self.device)
 
-            # Model prediction
             self.model.eval()
             with torch.no_grad():
-                out = self.model(image.unsqueeze(0))[0]
+                out = self.model(image.unsqueeze(0))
 
-                # Convert to numpy arrays
                 out_np = out.cpu().detach().numpy().squeeze().squeeze()
                 mask_np = mask.cpu().detach().numpy().squeeze()
 
-                # Print statistics (optional)
-                # print(f"MAX: {max(mask_np)}")
-                # print(f"MIN: {min(mask_np)}")
 
-                # Create plots
-                plt.figure(figsize=(14, 7))
-
-                # Plot options (make these configurable parameters if needed)
+                # --- Plotting with controlled whitespace ---
                 num_subplots = 3
                 binary_threshold = 0.5
 
-                # Plot prediction
-                plt.subplot(1, num_subplots, 1)
-                plt.imshow(out_np, cmap='gray' if out_np.ndim == 2 else None)
-                plt.title('Prediction')
-                plt.axis('off')
+                fig, axes = plt.subplots(1, num_subplots, figsize=(14, 7))  # Create figure and axes objects
+                fig.subplots_adjust(wspace=0.1, hspace=0.1)  # Spacing between subplots
 
-                # Plot binary prediction
-                plt.subplot(1, num_subplots, 2)
-                plt.imshow((out_np > binary_threshold), cmap='gray' if out_np.ndim == 2 else None)
-                plt.title('Binary Prediction')
-                plt.axis('off')
+                # Prediction Plot
+                im1 = axes[0].imshow(out_np, cmap='gray' if out_np.ndim == 2 else None)  # Capture the image object
+                axes[0].set_title('Prediction')
+                axes[0].axis('off')
 
-                # Plot mask
-                plt.subplot(1, num_subplots, 3)
-                plt.imshow(mask_np, cmap='gray' if mask_np.ndim == 2 else None)
-                plt.title('Mask')
-                plt.axis('off')
+                # Binary Prediction Plot
+                im2 = axes[1].imshow((out_np > binary_threshold), cmap='gray' if out_np.ndim == 2 else None)  # Capture the image object
+                axes[1].set_title('Binary Prediction')
+                axes[1].axis('off')
 
-                filename = f"{self.current_epoch+1}.png"
+                # Mask Plot
+                im3 = axes[2].imshow(mask_np, cmap='gray' if mask_np.ndim == 2 else None)  # Capture the image object
+                axes[2].set_title('Mask')
+                axes[2].axis('off')
+
+                # Set layout to 'constrained'
+                fig.set_layout_engine("constrained")
+
+                filename = f"{self.current_epoch + 1}.png"
                 filepath = os.path.join(self.image_evolution_dir, filename)
-                plt.savefig(filepath)
-                plt.close() #close fig
-                del out, out_np, mask_np, image #delete vars
+                plt.savefig(filepath, bbox_inches='tight', pad_inches=0.1, dpi=300)  # Save with bounding box and DPI
+                plt.close(fig)  # Close the figure, not just plt
+                del out, out_np, mask_np, image
 
         except Exception as e:
             print(f"Error during image evolution: {e}")
@@ -586,6 +570,44 @@ class Trainer():
         except:
             print(f"Error creating animation: {e}")        
                         
-                    
+    def find_best_threshold(self):
+        self.model.eval()
+        all_outputs = []
+        all_targets = []
+
+        with torch.inference_mode():
+            for batch_idx, batch in enumerate(self.val_loader):
+                inputs, targets = batch
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
+
+                outputs = self.model(inputs)
+                outputs_probs = torch.sigmoid(outputs)
+
+                targets = targets.long()
+
+                all_outputs.append(outputs_probs.detach())
+                all_targets.append(targets.detach())
+
+        # Aggregate predicitions and targets
+        all_outputs = torch.cat(all_outputs, dim=0)
+        all_targets = torch.cat(all_targets, dim=0)
+
+        best_iou = 0
+        best_threshold = 0
+
+        binary_metrics = BinaryMetrics()  # Initialize your metrics class
+
+        for threshold in np.arange(0, 1.05, 0.05):
+            results = binary_metrics.calculate_metrics(all_outputs, all_targets, threshold=threshold)
+            temp_iou = results["IoU"] # Access IoU from your class
+
+            if temp_iou > best_iou:
+                best_iou = temp_iou
+                best_threshold = threshold
+
+        print(f"Best threshold: {best_threshold} with IoU: {best_iou:.4f}")
+        
+        self.pr_curve(outputs=all_outputs.numpy().flatten(), targets=all_targets.numpy().flatten())
+            
         
         
