@@ -7,7 +7,7 @@ def main():
     
     args = get_args_test()
     
-    model = get_model(args, test=True)
+    model = get_model(args)
     
     loss_function = get_loss_function(args)
     

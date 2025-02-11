@@ -1067,27 +1067,27 @@ class ModeltrainingGUI:
         
         ###############################################################################################################
         # Data dir and other
-        ctk.CTkLabel(left_frame, text="Data Dir").grid(row=5, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkLabel(left_frame, text="Data Dir").grid(row=6, column=0, sticky="e", padx=5, pady=5)
         dir_entry = ctk.CTkEntry(left_frame, textvariable=self.test_data_dir_var)
-        dir_entry.grid(row=5, column=1, sticky="w", padx=5, pady=5)
+        dir_entry.grid(row=6, column=1, sticky="w", padx=5, pady=5)
         browse_button = ctk.CTkButton(left_frame, text="...", width=30, command=lambda entry=dir_entry: self.browse_dir(entry))
-        browse_button.grid(row=5, column=2, sticky="w", padx=5, pady=5)
+        browse_button.grid(row=6, column=2, sticky="w", padx=5, pady=5)
         
-        ctk.CTkLabel(left_frame, text="Batch Size").grid(row=6, column=0, sticky="e", padx=5, pady=5)
-        ctk.CTkEntry(left_frame, textvariable=self.test_batch_size_var, validatecommand=self.validate_int_input).grid(row=6, column=1, sticky="w", padx=5, pady=5)
+        ctk.CTkLabel(left_frame, text="Batch Size").grid(row=7, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkEntry(left_frame, textvariable=self.test_batch_size_var, validatecommand=self.validate_int_input).grid(row=7, column=1, sticky="w", padx=5, pady=5)
         
-        ctk.CTkLabel(left_frame, text="Normalize").grid(row=7, column=0, sticky="e", padx=5, pady=5)
-        ctk.CTkSwitch(left_frame, text="", variable=self.test_normalize_var, onvalue=True, offvalue=False).grid(row=7, column=1, sticky="w", padx=5, pady=5)
+        ctk.CTkLabel(left_frame, text="Normalize").grid(row=8, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkSwitch(left_frame, text="", variable=self.test_normalize_var, onvalue=True, offvalue=False).grid(row=8, column=1, sticky="w", padx=5, pady=5)
 
         available_transforms = ["transforms.ToTensor", "transforms.Resize"]
         self.test_transforms_widget = TransformWidget(left_frame, available_transforms=available_transforms)
-        self.test_transforms_widget.grid(row=8, column=0, columnspan=3, sticky="we", padx=5, pady=5)
+        self.test_transforms_widget.grid(row=9, column=0, columnspan=3, sticky="we", padx=5, pady=5)
 
         test_button = ctk.CTkButton(left_frame, text="Start testing", command=self.start_testing, height=30)
-        test_button.grid(row=9, columnspan=3, sticky="we", padx=5, pady=5)
+        test_button.grid(row=10, columnspan=3, sticky="we", padx=5, pady=5)
         
         slider = ctk.CTkSlider(left_frame, from_=0.8, to=1.6, number_of_steps=10, command=self.change_scaling_event)
-        slider.grid(row=10,columnspan=3, sticky="we", padx=5, pady=5)
+        slider.grid(row=11,columnspan=3, sticky="we", padx=5, pady=5)
     
     def create_dataset_tab(self, parent):
         container_frame = ctk.CTkFrame(parent)

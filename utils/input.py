@@ -75,17 +75,12 @@ def get_args_train():
     
     return parser.parse_args()
 
-def get_model(args, aux_params=None, test=False):
-    
-    if not test:
-        weights = "imagenet" if bool(args.weights) else None
-        attention = None if args.attention == "None" else args.attention
-        batchnorm = args.batchnorm
-    else:
-        weights = "imagenet"
-        attention = None
-        batchnorm = True
-        
+def get_model(args, aux_params=None):
+
+    weights = "imagenet" if bool(args.weights) else None
+    attention = None if args.attention == "None" else args.attention
+    batchnorm = args.batchnorm
+
     try:
         if args.model == 'U-Net' or args.model == 'Unet':
             model = torchseg.Unet(
