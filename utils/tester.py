@@ -159,6 +159,12 @@ class Tester():
         print("Test Results:")
         for key, value in formatted_results.items():
             print(f"{key.capitalize()}: {value}")
+            
+        results_file_path = os.path.join(self.output_dir, "test_results.txt")
+        with open(results_file_path, "w") as results_file:
+            results_file.write("Test Results:\n")
+            for key, value in formatted_results.items():
+                results_file.write(f"{key.capitalize()}: {value}\n")
                 
         return results
     
@@ -229,4 +235,46 @@ class Tester():
                 plt.tight_layout()
                 filename = f"predictions_{batch_idx}_{i}.png"
                 plt.savefig(os.path.join(self.output_dir, filename))
+                plt.close(fig)
+                
+    def save_predictions(self, n=4):
+        """
+        Plots input images, predicted masks, and target masks, handling batches.
+        Creates a *separate* plot for each image, and rescales the *image*
+        data for visualization.
+        """
+        num_batches_to_plot = min(n, len(self.all_inputs))
+
+        for batch_idx in range(num_batches_to_plot):
+            image_batch = self.all_inputs[batch_idx].cpu().numpy()
+            mask_batch = self.all_targets[batch_idx].cpu().numpy()
+            preds_batch = self.all_outputs[batch_idx].cpu().detach().numpy()
+
+            # Handle single images
+            if image_batch.ndim == 3:
+                image_batch = image_batch[np.newaxis, ...]
+                mask_batch = mask_batch[np.newaxis, ...]
+                preds_batch = preds_batch[np.newaxis, ...]
+            if image_batch.ndim == 2:
+                image_batch = image_batch[np.newaxis, np.newaxis, ...]
+                mask_batch = mask_batch[np.newaxis, np.newaxis, ...]
+                preds_batch = preds_batch[np.newaxis, np.newaxis, ...]
+
+            num_images_in_batch = min(n, image_batch.shape[0])
+
+            for i in range(num_images_in_batch):
+                preds = preds_batch[i]
+
+                if preds.ndim == 3 and preds.shape[0] == 1:
+                    preds = preds[0]
+
+               
+
+                # Create a new figure for each image
+                fig = plt.figure(figsize=(5.12, 5.12), dpi=100)  # Set figure size to 512x512 pixels
+                plt.imshow(preds, cmap="gray")
+                plt.axis("off")
+                plt.tight_layout(pad=0)
+                filename = f"{batch_idx}_{i}.png"
+                plt.savefig(os.path.join(self.output_dir, filename), bbox_inches='tight', pad_inches=0)
                 plt.close(fig)

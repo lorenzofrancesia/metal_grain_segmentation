@@ -25,6 +25,7 @@ def main():
     
     tester.test()
     tester.plot_results()
+    # tester.save_predictions()
     
 if __name__ == "__main__":
     main()

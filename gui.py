@@ -468,7 +468,7 @@ class ModeltrainingGUI:
         self.optimizer_var = tk.StringVar(value="AdamW")
         self.lr_var = tk.StringVar(value="0.0001")
         self.momentum_var = tk.StringVar(value="0.9")
-        self.weight_decay_var = tk.StringVar(value="1e-2")
+        self.weight_decay_var = tk.StringVar(value="1e-4")
         
         self.warmup_var = ctk.StringVar(value="None")
         self.linear_warmup_steps_var = tk.StringVar(value="3")
@@ -505,6 +505,7 @@ class ModeltrainingGUI:
         self.test_normalize_var = tk.BooleanVar(value=False)
         
         # Dataset tab index entry
+        self.dataset_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\data\\val")
         self.dataset_index_var = tk.StringVar() # Variable to store index input
         
 
@@ -1098,7 +1099,7 @@ class ModeltrainingGUI:
 
         # Dataset Directory Selection
         ctk.CTkLabel(left_frame, text="Dataset Dir").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-        dataset_dir_entry = ctk.CTkEntry(left_frame, textvariable=self.data_dir_var)
+        dataset_dir_entry = ctk.CTkEntry(left_frame, textvariable=self.dataset_dir_var)
         dataset_dir_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
         browse_button = ctk.CTkButton(left_frame, text="...", width=30, command=lambda entry=dataset_dir_entry: self.browse_dir(entry))
         browse_button.grid(row=0, column=2, sticky="w", padx=5, pady=5)

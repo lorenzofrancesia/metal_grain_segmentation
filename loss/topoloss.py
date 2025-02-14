@@ -15,7 +15,12 @@ class TopologicalLoss(nn.Module):
     the predicted likelihood map with the ground truth.
     """
 
-    def __init__(self, pers_thresh=0.03, pers_thresh_perfect=0.99, topo_size=100, device='cuda' if torch.cuda.is_available() else 'cpu', debugging=False):
+    def __init__(self, 
+                 pers_thresh=0.03, 
+                 pers_thresh_perfect=0.99, 
+                 topo_size=100, 
+                 device='cuda' if torch.cuda.is_available() else 'cpu', 
+                 debugging=False):
         """
         Initializes the TopologicalLoss module.
 

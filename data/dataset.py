@@ -61,7 +61,7 @@ class SegmentationDataset(Dataset):
             normalize_transform = transforms.Normalize(mean=self.mean, std=self.std)
             image = normalize_transform(image)
         
-        mask = 1 - mask
+        # mask = 1 - mask
          
         return image, mask
     

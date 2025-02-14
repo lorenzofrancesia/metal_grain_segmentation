@@ -453,31 +453,24 @@ class Trainer():
     
         # Train_loss
         n = len(train_loss) 
-        k = 25
-        train_avg = []
-        for i in range(k, n-k):
-            train_avg.append(sum(train_loss[(i-k):(i+k+1)])/(2*k+1))
+        # k = 25
+        # train_avg = []
+        # val_avg = []
+        # for i in range(k, n-k):
+        #     train_avg.append(sum(train_loss[(i-k):(i+k+1)])/(2*k+1))
+        #     val_avg.append(sum(val_loss[(i-k):(i+k+1)])/(2*k+1))
             
         fig_train = plt.figure(figsize=(8,6))
-        plt.plot(range(n), train_loss, alpha=0.5)
-        plt.plot(range(k,n-k), train_avg, 'maroon')
+        plt.plot(range(n), train_loss, alpha=0.5, label="Train Loss")
+        plt.plot(range(n), val_loss, alpha=0.5, label="Val Loss")
+        # plt.plot(range(k,n-k), train_avg, 'maroon')
+        plt.legend(loc=1)
         plt.xlabel("Epoch")
-        plt.ylabel("Train Loss")
-        plt.title("Train Loss")
-        plt.savefig(os.path.join(self.results_dir, "train_loss.png"))
+        plt.ylabel("Loss")
+        plt.title("Loss")
+        plt.savefig(os.path.join(self.results_dir, "loss.png"))
         
-        val_avg = []
-        for i in range(k, n-k):
-            val_avg.append(sum(val_loss[(i-k):(i+k+1)])/(2*k+1))
-            
-        fig_val = plt.figure(figsize=(8,6))
-        plt.plot(range(n), val_loss, alpha=0.5)
-        plt.plot(range(k,n-k), val_avg, 'maroon')
-        plt.xlabel("Epoch")
-        plt.ylabel("Val Loss")
-        plt.title("Val Loss")
-        plt.savefig(os.path.join(self.results_dir, "val_loss.png"))
-        plt.close(fig_val) #close fig
+        
     
     def pr_curve(self, outputs, targets):
         precision, recall, _ = precision_recall_curve(targets, outputs, pos_label=1)
