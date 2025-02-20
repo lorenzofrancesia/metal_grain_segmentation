@@ -13,36 +13,36 @@ def skeletonize_image(image_path):
     """
     # 1. Read Image
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    # plt.imshow(img, cmap='gray')
-    # plt.title("1. Original Grayscale Image")
-    # plt.axis('off')
-    # plt.show()
+    plt.imshow(img, cmap='gray')
+    plt.title("1. Original Grayscale Image")
+    plt.axis('off')
+    plt.show()
 
     # 2. Normalize
     img = img / 255.0
-    # plt.imshow(img, cmap='gray')
-    # plt.title("2. Normalized Image (0-1)")
-    # plt.axis('off')
-    # plt.show()
-    # print(np.unique(img))
+    plt.imshow(img, cmap='gray')
+    plt.title("2. Normalized Image (0-1)")
+    plt.axis('off')
+    plt.show()
+    print(np.unique(img))
 
     # 3. Binarize
     if np.mean(img) > 0.5:
         binary_img = (img < 0.5)
     else:
         binary_img = (img > 0.5)
-    # plt.imshow(binary_img, cmap='gray')
-    # plt.title("3. Binary Image (Thresholded)")
-    # plt.axis('off')
-    # plt.show()
-    # print(np.unique(binary_img))
+    plt.imshow(binary_img, cmap='gray')
+    plt.title("3. Binary Image (Thresholded)")
+    plt.axis('off')
+    plt.show()
+    print(np.unique(binary_img))
 
     # 4. Skeletonize
     skeleton = skeletonize(binary_img)
-    # plt.imshow(skeleton, cmap='gray')
-    # plt.title("4. Skeletonized Image")
-    # plt.axis('off')
-    # plt.show()
+    plt.imshow(skeleton, cmap='gray')
+    plt.title("4. Skeletonized Image")
+    plt.axis('off')
+    plt.show()
 
     return (skeleton * 255).astype(np.uint16)
 
@@ -124,9 +124,9 @@ def prune_branches(skeleton, branch_length_ratio=0.05):
         regions = regionprops(labeled_skeleton)
         removed_any = False
 
-        # print(f"Iteration: {iteration}")
-        # print(f"Number of endpoints: {num_endpoints}")
-        # print(f"Number of regions: {len(regions)}")
+        print(f"Iteration: {iteration}")
+        print(f"Number of endpoints: {num_endpoints}")
+        print(f"Number of regions: {len(regions)}")
         
         total_branch_length = 0
         
@@ -149,10 +149,10 @@ def prune_branches(skeleton, branch_length_ratio=0.05):
 
         # print(f"Pixels remaining (simplified): {np.sum(pruned_skeleton > 0)}")
 
-        # plt.imshow(pruned_skeleton, cmap='gray')
-        # plt.title(f"Pruned Skeleton (Iteration {iteration})")
-        # plt.axis('off')
-        # plt.show()
+        plt.imshow(pruned_skeleton, cmap='gray')
+        plt.title(f"Pruned Skeleton (Iteration {iteration})")
+        plt.axis('off')
+        plt.show()
 
     return (pruned_skeleton * 255).astype(np.uint16)
 
@@ -168,9 +168,9 @@ def detect_breakpoints(skeleton):
     endpoints = (neighbor_count/255 == 11) & (skeleton > 0)
     endpoints = endpoints.astype(np.uint8)
     
-    # plt.imshow(endpoints, cmap='gray')
-    # plt.axis('off')
-    # plt.show()
+    plt.imshow(endpoints, cmap='gray')
+    plt.axis('off')
+    plt.show()
     
     y_coords, x_coords = np.nonzero(endpoints)
     breakpoints = list(zip(x_coords, y_coords))
@@ -207,7 +207,7 @@ def detect_breakpoints(skeleton):
 #     except Exception as e:
 #         print(e)
 
-def connect_breakpoints(image, breakpoints, max_distance=40, angle_threshold=120):
+def connect_breakpoints(image, breakpoints, max_distance=100, angle_threshold=120):
     points_set = set(tuple(p) for p in breakpoints)
     for p1_tuple in list(points_set): # Iterate over a copy to avoid changing set size during iteration
         p1 = np.array(p1_tuple) # Convert back to numpy array for distance calculation
@@ -269,29 +269,29 @@ def process_image(image_path, min_branch_length=20):
     plt.axis('off')
     plt.show()
     
-    # extended_skeleton = extend_missing_boundaries(connected_skeleton, breakpoints)
+    extended_skeleton = extend_missing_boundaries(connected_skeleton, breakpoints)
 
-    # # Final Result
-    # image = cv2.imread(image_path)
-    # fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    # axes[0].imshow(image)
-    # axes[0].set_title("Original Image")
-    # axes[0].axis('off')
+    # Final Result
+    image = cv2.imread(image_path)
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    axes[0].imshow(image)
+    axes[0].set_title("Original Image")
+    axes[0].axis('off')
 
-    # axes[1].imshow(pruned_skeleton, cmap='gray')
-    # axes[1].set_title("Pruned Skeletonized Image")
-    # axes[1].axis('off')
+    axes[1].imshow(pruned_skeleton, cmap='gray')
+    axes[1].set_title("Pruned Skeletonized Image")
+    axes[1].axis('off')
 
-    # axes[2].imshow(extended_skeleton, cmap='gray')
-    # axes[2].set_title("Extended Skeleton Image")
-    # axes[2].axis('off')
+    axes[2].imshow(extended_skeleton, cmap='gray')
+    axes[2].set_title("Extended Skeleton Image")
+    axes[2].axis('off')
 
-    # plt.tight_layout()
-    # plt.show()
+    plt.tight_layout()
+    plt.show()
 
-    # return image
+    return image
 
 
 # # # Example usage
-image_path = 'C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\preds\\0_2.png'
+image_path = 'C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\preds\\0_1.png'
 pruned_skeleton = process_image(image_path, min_branch_length=30)

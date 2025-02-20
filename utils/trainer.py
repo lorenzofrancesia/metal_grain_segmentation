@@ -28,6 +28,7 @@ class Trainer():
                  model,
                  batch_size=16,
                  normalize=False,
+                 negative=False,
                  train_transform= transforms.ToTensor(),
                  optimizer=optim.Adam, 
                  loss_function=nn.BCELoss(),
@@ -53,6 +54,7 @@ class Trainer():
         self.train_transform = train_transform
         self.batch_size = batch_size
         self.normalize = normalize
+        self.negative = negative
 
         
         # Training parameters 
@@ -121,7 +123,7 @@ class Trainer():
                 },
                 "Encoder Parameters:" : {
                     "encoder" : self.config.encoder,
-                    "weights" : self.config.weights
+                    "weights" : self.config.pretrained_weights
                 },
                 "Optimizer Parameters:" : {
                     "optimizer" : self.config.optimizer,
@@ -160,6 +162,7 @@ class Trainer():
                 },
                 "Dataset Parameters:" : {
                     "normalize" : self.config.normalize,
+                    "negative" : self.config.negative,
                     "transform" : self.config.transform
                 },
             }
@@ -197,6 +200,7 @@ class Trainer():
             image_transform=self.train_transform,
             mask_transform=self.train_transform,
             normalize=self.normalize,
+            negative=self.negative,
             verbose=False
             )
         
@@ -206,6 +210,7 @@ class Trainer():
             image_transform=self.train_transform,
             mask_transform=self.train_transform,
             normalize=self.normalize,
+            negative=self.negative,
             verbose=False,  
             mean=self.train_dataset.mean,
             std=self.train_dataset.std
@@ -235,13 +240,12 @@ class Trainer():
     
         # Forward pass
         outputs = self.model(inputs)
-        outputs_probs = torch.sigmoid(outputs)     
         
         if isinstance(self.loss_function, list):
             loss_func1, loss_func2, weight1, weight2 = self.loss_function
-            loss = weight1 * loss_func1(outputs_probs, targets) + weight2 * loss_func2(outputs_probs, targets)
+            loss = weight1 * loss_func1(outputs, targets) + weight2 * loss_func2(outputs, targets)
         else:
-            loss = self.loss_function(outputs_probs, targets)  
+            loss = self.loss_function(outputs, targets)  
         
         # Backward pass
         self.optimizer.zero_grad()
@@ -251,7 +255,7 @@ class Trainer():
         self.optimizer.step()
         
          # --- MEMORY MANAGEMENT ---
-        del inputs, targets, outputs, outputs_probs  # Explicitly delete tensors
+        del inputs, targets, outputs  # Explicitly delete tensors
         if torch.cuda.is_available():
             torch.cuda.empty_cache()  # Clear GPU cache
         
@@ -274,13 +278,11 @@ class Trainer():
                 outputs = self.model(inputs)
                 outputs_probs = torch.sigmoid(outputs)
                 
-                targets = targets.long()
-                
                 if isinstance(self.loss_function, list):
                     loss_func1, loss_func2, weight1, weight2 = self.loss_function
-                    loss = weight1 * loss_func1(outputs_probs, targets) + weight2 * loss_func2(outputs_probs, targets)
+                    loss = weight1 * loss_func1(outputs, targets) + weight2 * loss_func2(outputs, targets)
                 else:
-                    loss = self.loss_function(outputs_probs, targets)  
+                    loss = self.loss_function(outputs, targets)  
                 val_loss += loss.item()
                 
                 # outputs_binary = (outputs_probs > 0.5).long()
@@ -333,6 +335,7 @@ class Trainer():
         #         raise ValueError("All output values should be between 0 and 1.")
         #     if not torch.all((all_targets_flat >= 0) & (all_targets_flat <= 1)):
         #         raise ValueError("All target values should be between 0 and 1.")
+        
         metrics_results = defaultdict()
         binary_metrics = BinaryMetrics()
 

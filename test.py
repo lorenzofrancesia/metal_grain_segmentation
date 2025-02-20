@@ -15,11 +15,11 @@ def main():
 
     tester = Tester(
         model=model,
-        model_path=args.model_path,
-        data_dir=args.data_dir,
-        batch_size=args.batch_size,
+        model_path=args.test_model_path,
+        data_dir=args.test_data_dir,
+        batch_size=args.test_batch_size,
         loss_function=loss_function,
-        normalize=args.normalize, 
+        normalize=args.test_normalize, 
         test_transform = transform
     )
     

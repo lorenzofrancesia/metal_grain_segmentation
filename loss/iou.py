@@ -11,7 +11,8 @@ class IoULoss(nn.Module):
     def forward(self, inputs, targets, smooth=1):
         
         # Comment out if sigmoid already in model
-        # inputs = F.sigmoid(inputs)
+        inputs = F.sigmoid(inputs)
+        targets = targets.long()
         
         inputs = inputs.flatten()
         targets = targets.flatten()

@@ -237,7 +237,7 @@ if __name__ == '__main__':
             target_image = tensor_to_image(target_img)
 
             fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-            axes[0].imshow(input_img)
+            axes[0].imshow(input_img, cmap='gray')
             axes[0].set_title("Original Image")
             axes[0].axis('off')
 
@@ -251,6 +251,5 @@ if __name__ == '__main__':
 
             plt.tight_layout()
             plt.show()
-            
 
     print("Inference complete.")

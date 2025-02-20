@@ -12,29 +12,29 @@ def skeletonize_image(image_path):
     """
     # 1. Read Image
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    # plt.imshow(img, cmap='gray')
-    # plt.title("1. Original Grayscale Image")
-    # plt.axis('off')
-    # plt.show()
+    plt.imshow(img, cmap='gray')
+    plt.title("1. Original Grayscale Image")
+    plt.axis('off')
+    plt.show()
 
     # 2. Normalize
     img = img / 255.0
-    # plt.imshow(img, cmap='gray')
-    # plt.title("2. Normalized Image (0-1)")
-    # plt.axis('off')
-    # plt.show()
-    # print(np.unique(img))
+    plt.imshow(img, cmap='gray')
+    plt.title("2. Normalized Image (0-1)")
+    plt.axis('off')
+    plt.show()
+    print(np.unique(img))
 
     # 3. Binarize
     if np.mean(img) > 0.5:
-        binary_img = (img < 0.5)
+        binary_img = (img < 0.95)
     else:
-        binary_img = (img > 0.5)
-    # plt.imshow(binary_img, cmap='gray')
-    # plt.title("3. Binary Image (Thresholded)")
-    # plt.axis('off')
-    # plt.show()
-    # print(np.unique(binary_img))
+        binary_img = (img > 0.05)
+    plt.imshow(binary_img, cmap='gray')
+    plt.title("3. Binary Image (Thresholded)")
+    plt.axis('off')
+    plt.show()
+    print(np.unique(binary_img))
 
     # 4. Skeletonize
     skeleton = skeletonize(binary_img)
@@ -55,50 +55,50 @@ def get_endpoints_and_branch_points(skeleton):
 
     neighbor_count = convolve(skeleton, kernel, mode='constant', cval=0)
     
-    # print(np.unique(neighbor_count))
-    # unique_values = np.unique(neighbor_count)
-    # cmap = {0: (0, 0, 0), 255: (1, 1, 1)}
-    # other_colors = plt.colormaps['tab10'].colors
-    # color_index = 0
-    # for value in unique_values:
-    #     if value not in cmap:
-    #         cmap[value] = other_colors[color_index % len(other_colors)]
-    #         color_index += 1
-    # rgb_image = np.zeros((neighbor_count.shape[0], neighbor_count.shape[1], 3), dtype=float)
-    # for value, color in cmap.items():
-    #     rgb_image[neighbor_count == value] = color
-    # fig, ax = plt.subplots()
-    # ax.imshow(rgb_image)
-    # legend_elements = [plt.Line2D([0], [0], marker='o', color=cmap[value], label=f"{value/255}", markersize=8) for value in sorted(cmap.keys()) if value != 0 and value != 255]
-    # ax.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc='upper left')
-    # plt.title("Neighbor Counts")
-    # plt.axis('off')
-    # plt.show()
+    print(np.unique(neighbor_count))
+    unique_values = np.unique(neighbor_count)
+    cmap = {0: (0, 0, 0), 255: (1, 1, 1)}
+    other_colors = plt.colormaps['tab10'].colors
+    color_index = 0
+    for value in unique_values:
+        if value not in cmap:
+            cmap[value] = other_colors[color_index % len(other_colors)]
+            color_index += 1
+    rgb_image = np.zeros((neighbor_count.shape[0], neighbor_count.shape[1], 3), dtype=float)
+    for value, color in cmap.items():
+        rgb_image[neighbor_count == value] = color
+    fig, ax = plt.subplots()
+    ax.imshow(rgb_image)
+    legend_elements = [plt.Line2D([0], [0], marker='o', color=cmap[value], label=f"{value/255}", markersize=8) for value in sorted(cmap.keys()) if value != 0 and value != 255]
+    ax.legend(handles=legend_elements, bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.title("Neighbor Counts")
+    plt.axis('off')
+    plt.show()
 
     endpoints = (neighbor_count/255 == 11) & (skeleton > 0)
     branch_points = (neighbor_count/255 >= 13) & (skeleton > 0)
 
     # Visualize Endpoints
-    # plt.imshow(endpoints, cmap='gray')
-    # plt.title("Endpoints")
-    # plt.axis('off')
-    # plt.show()
+    plt.imshow(endpoints, cmap='gray')
+    plt.title("Endpoints")
+    plt.axis('off')
+    plt.show()
     
-    # # Visualize Branch Points
-    # plt.imshow(branch_points, cmap='gray')
-    # plt.title("Branch Points")
-    # plt.axis('off')
-    # plt.show()
+    # Visualize Branch Points
+    plt.imshow(branch_points, cmap='gray')
+    plt.title("Branch Points")
+    plt.axis('off')
+    plt.show()
 
     # Visualize Endpoints and Branchpoints OVER the skeleton
-    # display_image = np.zeros((*skeleton.shape, 3), dtype=np.uint8) # Create a 3 channel all black image.
-    # display_image[skeleton > 0, :] = [255, 255, 255]  # Make skeleton white
-    # display_image[endpoints, :] = [255, 0, 0]       # Make endpoints red
-    # display_image[branch_points, :] = [0, 255, 0]    # Make branch points green
-    # plt.imshow(display_image)
-    # plt.title("Skeleton with Endpoints (Red) and Branch Points (Green)")
-    # plt.axis('off')
-    # plt.show()
+    display_image = np.zeros((*skeleton.shape, 3), dtype=np.uint8) # Create a 3 channel all black image.
+    display_image[skeleton > 0, :] = [255, 255, 255]  # Make skeleton white
+    display_image[endpoints, :] = [255, 0, 0]       # Make endpoints red
+    display_image[branch_points, :] = [0, 255, 0]    # Make branch points green
+    plt.imshow(display_image)
+    plt.title("Skeleton with Endpoints (Red) and Branch Points (Green)")
+    plt.axis('off')
+    plt.show()
 
     return endpoints, branch_points
 
@@ -179,11 +179,12 @@ def process_image(image_path, min_branch_length=30):
 
     plt.tight_layout()
     plt.show()
+    plt.savefig("C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test_output.png")
 
     return pruned_skeleton
 
 
 # Example usage
-# image_path = 'C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\preds\\0_1.png'
-image_path = "C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\gts\\0_0.png"
+image_path = 'C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\preds\\0_1.png'
+# image_path = "C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\gts\\0_0.png"
 pruned_skeleton = process_image(image_path, min_branch_length=30)

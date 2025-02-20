@@ -35,6 +35,7 @@ def main():
                       epochs=args.epochs,
                       output_dir=args.output_dir,
                       normalize=args.normalize,
+                      negative=args.negative,
                       config=args
                       )
     

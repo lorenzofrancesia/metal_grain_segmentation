@@ -10,26 +10,26 @@ import math
 from skimage.morphology import skeletonize, dilation
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
+import matplotlib.pyplot as plt
 
 # --- 1. MCANet Module (Improved Channel Attention) ---
+class SqueezeExcitation(nn.Module):
+    def __init__(self, nb_channels, reduction=16):
+        super(SqueezeExcitation, self).__init__()
+        self.nb_channels=nb_channels
+        self.avg_pool=nn.AdaptiveAvgPool2d(1)
+        self.fc=nn.Sequential(
+                nn.Linear(nb_channels, nb_channels // reduction),
+                nn.ReLU(inplace=True),
+                nn.Linear(nb_channels // reduction, nb_channels),
+                nn.Sigmoid())
 
-class SELayer(nn.Module):
-    def __init__(self, channel, reduction=16):
-        super(SELayer, self).__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Sequential(
-            nn.Linear(channel, channel // reduction, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(channel // reduction, channel, bias=False),
-            nn.Sigmoid()
-        )
-
+        
     def forward(self, x):
-        b, c, _, _ = x.size()
-        y = self.avg_pool(x).view(b, c)
-        y = self.fc(y).view(b, c, 1, 1)
-        return x * y.expand_as(x)
-
+        y = self.avg_pool(x).view(-1,self.nb_channels)
+        y = self.fc(y).view(-1,self.nb_channels,1,1)
+        return x * y
+    
 class MCANet(nn.Module):
     def __init__(self, in_channels):  
         super(MCANet, self).__init__()
@@ -45,10 +45,11 @@ class MCANet(nn.Module):
             self.k += 1 # Make k odd
         
         self.transform = nn.Sequential(
-            nn.Linear(in_channels, in_channels),
+            nn.Linear(in_channels, self.k),
+            nn.ReLU(inplace=True),
+            nn.Linear(self.k, in_channels),
             nn.Sigmoid()
-        )
-                                       
+        )                          
 
     def forward(self, x):
         b, c, h, w = x.size()
@@ -59,40 +60,38 @@ class MCANet(nn.Module):
         
         x_reshaped = x.view(b, c, -1) # (b, c, h*w)
         
-        weighted = torch.bmm(x_reshaped, attention.transpose(1,2)) # (b, c, 1)
-        weighted.squeeze(-1) # (b, c)
-        
+        weighted = torch.bmm(x_reshaped, attention.transpose(1,2)).squeeze(-1) # (b, c, 1)
+
         # transform
         channel_weights  = self.transform(weighted) # (b, c)
         channel_weights = channel_weights.view(b, c, 1, 1) # (b, c, 1, 1)
         
-        out = x + channel_weights * x
+        out = channel_weights * x
         
         return out     
 
 # --- 2. U-Net Generator (with MCANet) ---
-
 class UNetGenerator(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels, out_channels, batchnorm=True):
         super(UNetGenerator, self).__init__()
 
         # --- Encoder (Contraction Path) ---
-        self.enc1 = self.conv_block(in_channels, 64)
-        self.enc2 = self.conv_block(64, 128)
-        self.enc3 = self.conv_block(128, 256)
-        self.enc4 = self.conv_block(256, 512)
+        self.enc1 = self.conv_block(in_channels, 64, batchnorm=batchnorm)
+        self.enc2 = self.conv_block(64, 128, batchnorm=batchnorm)
+        self.enc3 = self.conv_block(128, 256, batchnorm=batchnorm)
+        self.enc4 = self.conv_block(256, 512, batchnorm=batchnorm)
 
-        self.bottleneck = self.conv_block(512, 1024)
+        self.bottleneck = self.conv_block(512, 1024, batchnorm=batchnorm)
 
         # --- Decoder (Expansion Path) ---  <-- Corrected blocks here
         self.upconv1 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
-        self.dec1 = self.conv_block(1024, 512)  # Combine 512 (from upconv) + 512 (from skip)
+        self.dec1 = self.conv_block(1024, 512, batchnorm=batchnorm)  # Combine 512 (from upconv) + 512 (from skip)
         self.upconv2 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
-        self.dec2 = self.conv_block(512, 256)   # Combine 256 (from upconv) + 256 (from skip)
+        self.dec2 = self.conv_block(512, 256, batchnorm=batchnorm)   # Combine 256 (from upconv) + 256 (from skip)
         self.upconv3 = nn.ConvTranspose2d(256, 128, kernel_size=2, stride=2)
-        self.dec3 = self.conv_block(256, 128)   # Combine 128 (from upconv) + 128 (from skip)
+        self.dec3 = self.conv_block(256, 128, batchnorm=batchnorm)   # Combine 128 (from upconv) + 128 (from skip)
         self.upconv4 = nn.ConvTranspose2d(128, 64, kernel_size=2, stride=2)
-        self.dec4 = self.conv_block(128, 64)    # Combine 64 (from upconv) + 64 (from skip)
+        self.dec4 = self.conv_block(128, 64, batchnorm=batchnorm)    # Combine 64 (from upconv) + 64 (from skip)
 
         self.final_conv = nn.Conv2d(64, out_channels, kernel_size=1)
 
@@ -101,16 +100,29 @@ class UNetGenerator(nn.Module):
         self.mcanet2 = MCANet(128)
         self.mcanet3 = MCANet(256)
         self.mcanet4 = MCANet(512)
+        
+        # self.mcanet1 = SqueezeExcitation(64)
+        # self.mcanet2 = SqueezeExcitation(128)
+        # self.mcanet3 = SqueezeExcitation(256)
+        # self.mcanet4 = SqueezeExcitation(512)
 
-    def conv_block(self, in_channels, out_channels):
-        return nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
-        )
+    def conv_block(self, in_channels, out_channels, batchnorm=True):
+        if batchnorm:
+            return nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+                nn.BatchNorm2d(out_channels),
+                nn.ReLU(inplace=True)
+            )
+        else: 
+            return nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True),
+                nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1),
+                nn.ReLU(inplace=True)
+            )
 
     def forward(self, x):
         # Encoder
@@ -132,71 +144,65 @@ class UNetGenerator(nn.Module):
 
         b = self.bottleneck(p4)
 
-        # Decoder (Corrected concatenation)
+        # Decoder
         d1 = self.upconv1(b)
-        d1 = torch.cat((e4, d1), dim=1)  # Concatenate *before* the conv block
+        d1 = torch.cat((e4, d1), dim=1)
         d1 = self.dec1(d1)
 
-
         d2 = self.upconv2(d1)
-        d2 = torch.cat((e3, d2), dim=1)  # Concatenate *before* the conv block
+        d2 = torch.cat((e3, d2), dim=1)
         d2 = self.dec2(d2)
 
-
         d3 = self.upconv3(d2)
-        d3 = torch.cat((e2, d3), dim=1)  # Concatenate *before* the conv block
+        d3 = torch.cat((e2, d3), dim=1)
         d3 = self.dec3(d3)
 
-
         d4 = self.upconv4(d3)
-        d4 = torch.cat((e1, d4), dim=1)  # Concatenate *before* the conv block
+        d4 = torch.cat((e1, d4), dim=1)
         d4 = self.dec4(d4)
 
-
         out = self.final_conv(d4)
-        return out
-    
-    
+        return torch.tanh(out)
+       
 # --- 3. Discriminator (PatchGAN) ---
-
 class Discriminator(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self, in_channels=3):
         super(Discriminator, self).__init__()
 
-        def discriminator_block(in_filters, out_filters, bn=True):
-            block = [nn.Conv2d(in_filters, out_filters, 4, 2, 1),
-                     nn.LeakyReLU(0.2, inplace=True)]
-            if bn:
-                block.append(nn.BatchNorm2d(out_filters))
-            return block
+        def discriminator_block(in_filters, out_filters, normalization=True):
+            """Returns a layer block for the discriminator."""
+            layers = [nn.Conv2d(in_filters, out_filters, 4, stride=2, padding=1)]
+            if normalization:
+                layers.append(nn.InstanceNorm2d(out_filters))
+            layers.append(nn.LeakyReLU(0.2, inplace=True))
+            return layers
 
         self.model = nn.Sequential(
-            *discriminator_block(in_channels + 1, 64, bn=False), # +1 for the concatenated input
+            *discriminator_block(in_channels * 2, 64, normalization=False),  # x2 because of concatenation
             *discriminator_block(64, 128),
             *discriminator_block(128, 256),
             *discriminator_block(256, 512),
-            nn.Conv2d(512, 1, 4, 1, 1) # Output a single value (real/fake)
+            nn.ZeroPad2d((1, 0, 1, 0)),
+            nn.Conv2d(512, 1, 4, padding=1, bias=False)
         )
 
-    def forward(self, img_input, img_target):
-        # Concatenate input image and target image channel-wise
-        img_input = torch.cat((img_input, img_target), 1)
+    def forward(self, img_A, img_B):
+        # Concatenate image and condition image by channels to produce input
+        img_input = torch.cat((img_A, img_B), 1)
         return self.model(img_input)
 
-
 # --- 4. Loss Function ---
-
 def focal_loss(inputs, targets, alpha=0.25, gamma=2):
-    bce_loss = F.binary_cross_entropy_with_logits(inputs, targets, reduction='none')
+    inputs_rescaled = (inputs + 1) / 2.0
+    targets_rescaled = (targets + 1) / 2.0
+    bce_loss = F.binary_cross_entropy(inputs_rescaled, targets_rescaled, reduction='none')
     pt = torch.exp(-bce_loss)
-    f_loss = alpha * (1 - pt)**gamma * bce_loss
+    alpha_factor = alpha * targets + (1 - alpha) * (1 - targets)
+    f_loss = alpha_factor * (1 - pt)**gamma * bce_loss
     return f_loss.mean()
 
-def gan_loss(output, is_real):
-    if is_real:
-      target = torch.ones_like(output)
-    else:
-      target = torch.zeros_like(output)
+def gan_loss(output, is_real, smooth_factor=0.1):
+    target = torch.ones_like(output) * (1 - smooth_factor) if is_real else torch.zeros_like(output)
     return F.binary_cross_entropy_with_logits(output, target)
 
 
@@ -205,50 +211,23 @@ class GrainBoundaryDataset(Dataset):
     def __init__(self, root_dir, transform=None):
         self.root_dir = root_dir
         self.transform = transform
-        self.image_files = [f for f in os.listdir(root_dir) if f.endswith(('.png', '.jpg', '.jpeg'))] # Add other extensions
+        self.image_files = [f for f in os.listdir(os.path.join(root_dir, "inputs")) if f.endswith(('.png', '.jpg', '.jpeg'))] # Add other extensions
 
     def __len__(self):
         return len(self.image_files)
 
     def __getitem__(self, idx):
-        img_path = os.path.join(self.root_dir, self.image_files[idx])
+        img_path = os.path.join(self.root_dir, "inputs", self.image_files[idx])
         image = Image.open(img_path).convert('L')
 
+        mask_path = os.path.join(self.root_dir, "targets", self.image_files[idx])
+        mask = Image.open(mask_path).convert('L')
+        
         if self.transform:
             image = self.transform(image)
+            mask = self.transform(mask)
 
-        gt_array = image.numpy().astype(np.float32)
-        if np.mean(gt_array) > 0.5:
-            binary_img = (gt_array < 0.5)
-        else:
-            binary_img = (gt_array > 0.5)
-        skeleton = skeletonize(binary_img)
-
-        dilated_skeleton = dilation(skeleton)
-        ground_truth = torch.from_numpy(dilated_skeleton.astype(np.float32))#.unsqueeze(0) 
-        # print(f"groundtruth has shape {ground_truth.shape}")
-
-        input_skeleton = skeleton.copy()
-        input_skeleton = input_skeleton[0,:,:]
-        # print(f"input has shape {input_skeleton.shape}")
-        
-        row_indices, col_indices = np.where(input_skeleton == True)
-        coordinates = list(zip(row_indices, col_indices))
-
-        num_erase_points = np.random.randint(9, 16)
-        erosion_radius = np.random.randint(5, 10) 
-        selected_points = np.random.choice(len(coordinates), min(num_erase_points, len(coordinates)), replace=False)
-
-        for i in selected_points:
-            row, col = coordinates[i]
-            rr, cc = np.ogrid[:input_skeleton.shape[0], :input_skeleton.shape[1]]
-            mask = (rr - row)**2 + (cc - col)**2 <= erosion_radius**2
-            input_skeleton[mask] = 0
-
-        dilated_input = dilation(input_skeleton)
-        input_image = torch.from_numpy(dilated_input.astype(np.float32)).unsqueeze(0)#.unsqueeze(0)
-        
-        return input_image, ground_truth
+        return image, mask # white background black boundaries
 
 
 def calculate_metrics(predictions, targets):
@@ -261,8 +240,10 @@ def calculate_metrics(predictions, targets):
     Returns:
         A tuple containing (MIoU, Accuracy, Precision).
     """
+    predictions_rescaled = (predictions + 1) / 2.0  # Rescale from [-1, 1] to [0, 1]
+    
     # Apply sigmoid and threshold to get binary predictions
-    predictions = (torch.sigmoid(predictions) > 0.5).float()
+    predictions = (predictions_rescaled > 0.5).float()
     targets = (targets > 0.5).float()  # Ensure targets are also binary
 
     intersection = (predictions * targets).sum()
@@ -281,7 +262,7 @@ def calculate_metrics(predictions, targets):
 
 
 
-def validate(generator, val_loader, device):
+def validate(generator, val_loader, device, epoch=0):
     generator.eval()
     total_l1_loss = 0
     total_miou = 0
@@ -296,7 +277,7 @@ def validate(generator, val_loader, device):
 
             generated_imgs = generator(input_imgs)
             l1_loss = F.l1_loss(generated_imgs, target_imgs)
-
+            
             miou, accuracy, precision = calculate_metrics(generated_imgs, target_imgs)
 
             total_l1_loss += l1_loss.item() * input_imgs.size(0)
@@ -310,10 +291,36 @@ def validate(generator, val_loader, device):
     avg_accuracy = total_accuracy / total_samples
     avg_precision = total_precision / total_samples
 
+    
+    fig, axes = plt.subplots(1, 5, figsize=(15, 5))
+    axes[0].imshow(input_imgs.squeeze(0).squeeze(0).cpu(), cmap='gray')
+    axes[0].set_title("input Image")
+    axes[0].axis('off')
+
+    axes[1].imshow(generated_imgs.squeeze(0).squeeze(0).cpu(), cmap='gray')
+    axes[1].set_title("generated Image")
+    axes[1].axis('off')
+    
+    axes[2].imshow((generated_imgs.squeeze(0).squeeze(0).cpu()>0.5), cmap='gray')
+    axes[2].set_title("binary generated Image")
+    axes[2].axis('off')
+
+    axes[3].imshow(target_imgs.squeeze(0).squeeze(0).cpu(), cmap='gray')
+    axes[3].set_title("target")
+    axes[3].axis('off')
+    
+    axes[4].imshow((generated_imgs.squeeze(0).squeeze(0).cpu()>0.5).long()-target_imgs.squeeze(0).squeeze(0).cpu(), cmap='gray')
+    axes[4].set_title("difference between binary generated and mask")
+    axes[4].axis('off')
+
+    plt.tight_layout()
+    plt.savefig(f"C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\images\\test_output_{epoch+1}.png")
+    plt.close()
+    
     generator.train()
     return avg_l1_loss, avg_miou, avg_accuracy, avg_precision # Return all metrics
 
-def train(generator, discriminator, train_loader, val_loader, optimizer_G, optimizer_D, device, lambda_L1, num_epochs, output_dir):
+def train(generator, discriminator, train_loader, val_loader, optimizer_G, optimizer_D, device, lambda_L1, lambda_focal, num_epochs, output_dir):
 
     best_val_loss = float('inf')  # Initialize with a very large value
 
@@ -346,7 +353,7 @@ def train(generator, discriminator, train_loader, val_loader, optimizer_G, optim
             loss_G_L1 = F.l1_loss(fake_imgs, target_imgs)
             loss_G_Focal = focal_loss(fake_imgs, target_imgs)
 
-            loss_G = loss_G_GAN + lambda_L1 * loss_G_L1 + loss_G_Focal
+            loss_G = loss_G_GAN + lambda_L1 * loss_G_L1 + loss_G_Focal * lambda_focal
             loss_G.backward()
             optimizer_G.step()
 
@@ -354,7 +361,7 @@ def train(generator, discriminator, train_loader, val_loader, optimizer_G, optim
                 print(f"Epoch [{epoch+1}/{num_epochs}], Batch [{i}/{len(train_loader)}], Loss D: {loss_D.item():.4f}, Loss G: {loss_G.item():.4f}")
 
         # --- Validation ---
-        val_loss, val_miou, val_accuracy, val_precision = validate(generator, val_loader, device)
+        val_loss, val_miou, val_accuracy, val_precision = validate(generator, val_loader, device, epoch)
         print(f"Epoch [{epoch+1}/{num_epochs}], Validation Loss: {val_loss:.4f}, MIoU: {val_miou:.4f}, Accuracy: {val_accuracy:.4f}, Precision: {val_precision:.4f}")
 
         # --- Save Best Model ---
@@ -362,7 +369,7 @@ def train(generator, discriminator, train_loader, val_loader, optimizer_G, optim
             best_val_loss = val_loss
             torch.save(generator.state_dict(), os.path.join(output_dir, 'best_generator.pth'))
             torch.save(discriminator.state_dict(), os.path.join(output_dir, 'best_discriminator.pth'))
-            print(f"Best model saved at epoch {epoch}")
+            print(f"Best model saved at epoch {epoch+1}")
 
 
     # --- Save Final Model ---
@@ -378,16 +385,17 @@ if __name__ == '__main__':
     # --- Hyperparameters ---
     in_channels = 1
     out_channels = 1
-    lr = 0.0002
+    lr = 0.0001
     batch_size = 1
-    num_epochs = 200
+    num_epochs = 20
     lambda_L1 = 100
+    lambda_focal = 100
     b = 1
     gamma = 2
 
     # --- Data Loading ---
-    train_dir = "C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\gts"
-    val_dir = 'C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\gts'
+    train_dir = "C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\gan\\train"
+    val_dir = 'C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\gan\\val'
     output_dir = 'C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\out'
     
     if not os.path.exists(output_dir):
@@ -397,6 +405,7 @@ if __name__ == '__main__':
     transform = transforms.Compose([
         transforms.Resize((256, 256)),  # Resize
         transforms.ToTensor(),  # Convert to tensor
+        transforms.Normalize((0.5,), (0.5,)) 
     ])
 
     train_dataset = GrainBoundaryDataset(train_dir, transform=transform)
@@ -410,55 +419,8 @@ if __name__ == '__main__':
     discriminator = Discriminator(in_channels).to(device)
 
     # --- Optimizers ---
-    optimizer_G = optim.SGD(generator.parameters(), lr=0.001)
-    optimizer_D = optim.SGD(discriminator.parameters(), lr=0.0001)
+    optimizer_G = optim.Adam(generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
+    optimizer_D = optim.Adam(discriminator.parameters(), lr=0.0002, betas=(0.5, 0.999))
 
     # --- Train ---
-    train(generator, discriminator, train_loader, val_loader, optimizer_G, optimizer_D, device, lambda_L1, num_epochs, output_dir)
-
-
-# error 
-
-# Traceback (most recent call last):
-#   File "c:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\metal_grain_segmentation\GANet_train.py", line 417, in <module>
-#     train(generator, discriminator, train_loader, val_loader, optimizer_G, optimizer_D, device, lambda_L1, num_epochs, output_dir)
-#   File "c:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\metal_grain_segmentation\GANet_train.py", line 333, in train
-#     fake_imgs = generator(input_imgs)
-#                 ^^^^^^^^^^^^^^^^^^^^^
-#   File "C:\Users\lorenzo.francesia\AppData\Local\Programs\Python\Python312\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
-#     return self._call_impl(*args, **kwargs)
-#            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-#   File "C:\Users\lorenzo.francesia\AppData\Local\Programs\Python\Python312\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
-#     return forward_call(*args, **kwargs)
-#            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-#   File "c:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\metal_grain_segmentation\GANet_train.py", line 118, in forward
-#     e1 = self.mcanet1(e1)
-#          ^^^^^^^^^^^^^^^^
-#   File "C:\Users\lorenzo.francesia\AppData\Local\Programs\Python\Python312\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
-#     return self._call_impl(*args, **kwargs)
-#            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-#   File "C:\Users\lorenzo.francesia\AppData\Local\Programs\Python\Python312\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
-#     return forward_call(*args, **kwargs)
-#            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-#   File "c:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\metal_grain_segmentation\GANet_train.py", line 66, in forward
-#     channel_weights  = self.transform(weighted) # (b, c)
-#                        ^^^^^^^^^^^^^^^^^^^^^^^^
-#   File "C:\Users\lorenzo.francesia\AppData\Local\Programs\Python\Python312\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
-#     return self._call_impl(*args, **kwargs)
-#            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-#   File "C:\Users\lorenzo.francesia\AppData\Local\Programs\Python\Python312\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
-#     return forward_call(*args, **kwargs)
-#            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-#   File "C:\Users\lorenzo.francesia\AppData\Local\Programs\Python\Python312\Lib\site-packages\torch\nn\modules\container.py", line 250, in forward
-#     input = module(input)
-#             ^^^^^^^^^^^^^
-#   File "C:\Users\lorenzo.francesia\AppData\Local\Programs\Python\Python312\Lib\site-packages\torch\nn\modules\module.py", line 1736, in _wrapped_call_impl
-#     return self._call_impl(*args, **kwargs)
-#            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-#   File "C:\Users\lorenzo.francesia\AppData\Local\Programs\Python\Python312\Lib\site-packages\torch\nn\modules\module.py", line 1747, in _call_impl
-#     return forward_call(*args, **kwargs)
-#            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-#   File "C:\Users\lorenzo.francesia\AppData\Local\Programs\Python\Python312\Lib\site-packages\torch\nn\modules\linear.py", line 125, in forward
-#     return F.linear(input, self.weight, self.bias)
-#            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-# RuntimeError: mat1 and mat2 shapes cannot be multiplied (64x1 and 64x64
+    train(generator, discriminator, train_loader, val_loader, optimizer_G, optimizer_D, device, lambda_L1, lambda_focal, num_epochs, output_dir)

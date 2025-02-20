@@ -10,6 +10,8 @@ import ast
 from loss.tversky import TverskyLoss, FocalTverskyLoss
 from loss.iou import IoULoss
 from loss.topoloss import TopologicalLoss
+from loss.focal import FocalLoss
+from loss.dice import DiceLoss, LCDiceLoss
 
 def get_args_train():
     
@@ -22,7 +24,7 @@ def get_args_train():
     
     # Encoder parameters
     parser.add_argument('--encoder', type=str, default='resnet152', help='Model to train.')
-    parser.add_argument('--weights', default=None, action="store_true", help="Utilize pretrained weights.")
+    parser.add_argument('--pretrained_weights', default=None, action="store_true", help="Utilize pretrained weights.")
     
     # Optimizer parameters
     parser.add_argument('--optimizer', type=str, default='Adam', help='Optimizer.')
@@ -50,6 +52,9 @@ def get_args_train():
     parser.add_argument('--beta', type=float, default=0.3, help='Beta for FocalTversky and Tversky.')
     parser.add_argument('--gamma', type=float, default=1.3333, help='Gamma for FocalTversky.')
     parser.add_argument('--topoloss_patch', type=int, default=64, help='Patch size for Topoloss.')
+    parser.add_argument('--positive_weight', type=float, default=1.0, help='Weight for positive example in BCE.')
+    parser.add_argument('--alpha_focal', type=float, default=0.8, help='Alpha for Focal.')
+    parser.add_argument('--gamma_focal', type=float, default=2, help='Gamma for Focal.')
     
     parser.add_argument('--loss_function1', type=str, default='FocalTversky', help='Loss Function 1 for combo loss.')
     parser.add_argument('--loss_function1_weight', type=float, default=0.5, help='Weight of loss Function 1 for combo loss.')
@@ -66,18 +71,18 @@ def get_args_train():
     
     # Dataset parameters 
     parser.add_argument("--normalize", default=False, action="store_true", help="Activate normalization.")
+    parser.add_argument("--negative", default=False, action="store_true", help="Images are inverted.")
     parser.add_argument('--transform', type=str, default='transforms.ToTensor', help='Transform to apply to the dataset.')
     
     # # To implement
     # parser.add_argument("--resume", default=False, action="store_true", help="Resume traing from last model saved")
     # parser.add_argument('--checkpoint_path', type=str, default=None, help='Path to checkpoint for resuming training')
 
-    
     return parser.parse_args()
 
 def get_model(args, aux_params=None):
 
-    weights = "imagenet" if bool(args.weights) else None
+    weights = "imagenet" if bool(args.pretrained_weights) else None
     attention = None if args.attention == "None" else args.attention
     batchnorm = args.batchnorm
 
@@ -258,8 +263,16 @@ def get_loss_function(args):
         return TverskyLoss(alpha=args.alpha, beta=args.beta)
     elif args.loss_function == "IoU":
         return IoULoss()
+    elif args.loss_function == "Dice":
+        return DiceLoss()
+    elif args.loss_function == "LCDice":
+        return LCDiceLoss()
     elif args.loss_function == "Topoloss":
         return TopologicalLoss()
+    elif args.loss_function == "BCE":
+        return torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([args.positive_weight]))
+    elif args.loss_function == "Focal":
+        return FocalLoss(alpha=args.alpha_focal, gamma=args.gamma_focal)
     elif args.loss_function == "Combo":
         loss_func1 = get_loss_function_by_name(args.loss_function1, args)
         loss_func2 = get_loss_function_by_name(args.loss_function2, args)
@@ -279,8 +292,16 @@ def get_loss_function_by_name(loss_func_name, args):
         return TverskyLoss(alpha=args.alpha, beta=args.beta)
     elif loss_func_name == "IoU":
         return IoULoss()
+    elif loss_func_name == "Dice":
+        return DiceLoss()
+    elif loss_func_name == "LCDice":
+        return LCDiceLoss()
     elif loss_func_name == "Topoloss":
-        return TopologicalLoss(topo_size=args.topoloss_patch)
+        return TopologicalLoss()
+    elif loss_func_name == "BCE":
+        return torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([args.positive_weight]))
+    elif loss_func_name == "Focal":
+        return FocalLoss(alpha=args.alpha_focal, gamma=args.gamma_focal)
     else:
         raise ValueError(f"Invalid loss function name for Combo option: {loss_func_name}")
 
@@ -291,7 +312,7 @@ def get_args_test():
     parser.add_argument('--model', type=str, default='Unet', help='Model to train')
     parser.add_argument('--attention', type=str, default='None', help='Attention type')
     parser.add_argument('--batchnorm', type=str, default='True', help='Batchnorm')
-    parser.add_argument('--model_path', type=str, help='Path to the model to test')
+    parser.add_argument('--test_model_path', type=str, help='Path to the model to test')
     
     # Encoder parameters
     parser.add_argument('--encoder', type=str, default='resnet152', help='Model to train.')
@@ -308,9 +329,9 @@ def get_args_test():
     parser.add_argument('--loss_function2', type=str, default='FocalTversky', help='Loss Function 2 for combo loss.')
     parser.add_argument('--loss_function2_weight', type=float, default=0.5, help='Weight of loss Function 2 for combo loss.')
     
-    parser.add_argument('--data_dir', type=str, help='Directory containing the dataset')
-    parser.add_argument('--batch_size', type=int, default=8, help='Batch size for testing')
-    parser.add_argument("--normalize", default=False, action="store_true", help="Activate normalization")
+    parser.add_argument('--test_data_dir', type=str, help='Directory containing the dataset')
+    parser.add_argument('--test_batch_size', type=int, default=8, help='Batch size for testing')
+    parser.add_argument("--test_normalize", default=False, action="store_true", help="Activate normalization")
     parser.add_argument('--transform', type=str, default='transforms.ToTensor', help='Transform to apply to the dataset.')
     
     return parser.parse_args()

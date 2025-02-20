@@ -1,4 +1,5 @@
 import tkinter as tk
+import tkinter.ttk as ttk
 import customtkinter as ctk
 from tkinter import filedialog, messagebox, scrolledtext
 import json
@@ -33,12 +34,13 @@ class StringRedirector(object):
         pass
 
 class TransformWidget(ctk.CTkFrame):
-    def __init__(self, master, available_transforms=None):
+    def __init__(self, master, available_transforms=None, update_callback=None):
         super().__init__(master)
         self.grid_rowconfigure(1, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
         self.available_transforms = available_transforms or ["transforms.ToTensor", "transforms.Resize"]
+        self.update_callback = update_callback  
 
         self.label = ctk.CTkLabel(self, text="Transform")
         self.label.grid(row=0, column=0, padx=5, pady=5, sticky="w")
@@ -53,7 +55,8 @@ class TransformWidget(ctk.CTkFrame):
         self.rows = []
         self.add_row(default="transforms.Resize", default_size="(512,512)")
         self.add_row(default="transforms.ToTensor")
-
+        
+        self._update_widget()
 
     def add_row(self, default=None, default_size=None):
         row_frame = ctk.CTkFrame(self.table_frame)
@@ -67,7 +70,6 @@ class TransformWidget(ctk.CTkFrame):
 
         dropdown = ctk.CTkOptionMenu(row_frame, values=self.available_transforms, command=lambda value: self.on_dropdown_change(value, row_frame))
         dropdown.grid(row=0, column=1, sticky="ew") # Use grid and sticky to fill space
-
 
         if default:
             dropdown.set(default)
@@ -84,6 +86,7 @@ class TransformWidget(ctk.CTkFrame):
             resize_entry.configure(state="disabled")
 
         self.rows.append({"frame": row_frame, "dropdown": dropdown, "resize_entry": resize_entry, "delete_btn": delete_btn})
+        self._update_widget()
 
     def on_dropdown_change(self, value, row_frame):
         for item in self.rows:
@@ -99,6 +102,7 @@ class TransformWidget(ctk.CTkFrame):
     def delete_row(self, frame):
         self.rows = [item for item in self.rows if item["frame"] != frame]
         frame.destroy()
+        self._update_widget()
 
     def get_sequence(self):
         sequence = []
@@ -141,9 +145,14 @@ class TransformWidget(ctk.CTkFrame):
 
                 else:
                     print(f"Warning: Could not parse transform string: '{transform_str}'")
+            self._update_widget()
 
         except (SyntaxError, ValueError, TypeError) as e:
             print(f"Error: Invalid config string format: {e}")
+    
+    def _update_widget(self):
+        if self.update_callback:
+            self.update_callback(self.get_sequence())
 
 class PlotView(ctk.CTkTabview):
     def __init__(self, master, **kwargs):
@@ -247,7 +256,7 @@ class PlotView(ctk.CTkTabview):
     def show_current_image(self):
         """Displays the image at the current index."""
         if not self.image_files:
-            print("No images to display.")
+            # print("No images to display.")
             self.image_ax.clear()
             self.image_ax.set_title("Image Evolution")
             self.image_ax.axis("off")
@@ -324,8 +333,10 @@ class PlotView(ctk.CTkTabview):
         mask_ax = self.dataset_figure.add_subplot(1, 2, 2)   # 1 row, 2 columns, second subplot for mask
 
         if idx is None:
-            idx = np.random.randint(0, len(dataset))
-        image, mask = dataset[idx]
+            self.currentidx = np.random.randint(0, len(dataset))
+        else:
+            self.currentidx = idx
+        image, mask = dataset[self.currentidx]
 
         image_np = image.permute(1, 2, 0).numpy() if isinstance(image, torch.Tensor) else image
         mask_np = mask.squeeze().numpy() if isinstance(mask, torch.Tensor) else mask
@@ -339,7 +350,7 @@ class PlotView(ctk.CTkTabview):
         image_ax.axis('off')
 
         # Display Mask in the second subplot
-        mask_ax.imshow(mask_np, cmap='jet')  # Use 'jet' or another suitable colormap for masks
+        mask_ax.imshow(mask_np, cmap='gray')  # Use 'jet' or another suitable colormap for masks
         mask_ax.set_title(f"Mask - Index: {idx}")
         mask_ax.axis('off')
 
@@ -379,7 +390,7 @@ class PlotView(ctk.CTkTabview):
         self.dataset_figure.tight_layout()
         self.dataset_canvas.draw()
 
-    def visualize_overlay(self, dataset, idx=None, alpha=0.5):
+    def visualize_overlay(self, dataset, idx=None, alpha=0.35):
         """Visualizes the overlay of an image and its mask in the Dataset tab using matplotlib."""
         self.switch_to_tab("Dataset")
         self.dataset_ax.clear()
@@ -395,7 +406,7 @@ class PlotView(ctk.CTkTabview):
             image = (image * 255).astype(np.uint8)
 
         ax.imshow(image, alpha=1.0)
-        ax.imshow(mask.squeeze(0), cmap="jet", alpha=alpha)
+        ax.imshow(mask.squeeze(0), cmap="gray", alpha=alpha)
         ax.axis("off")
         ax.set_title(f"Overlay of Image and Mask [Index: {idx}]")
 
@@ -470,8 +481,8 @@ class ModeltrainingGUI:
         self.momentum_var = tk.StringVar(value="0.9")
         self.weight_decay_var = tk.StringVar(value="1e-4")
         
-        self.warmup_var = ctk.StringVar(value="None")
-        self.linear_warmup_steps_var = tk.StringVar(value="3")
+        self.warmup_scheduler_var = ctk.StringVar(value="None")
+        self.warmup_steps_var = tk.StringVar(value="3")
 
         self.scheduler_var = tk.StringVar(value="None")
         self.start_factor_var = tk.StringVar(value="1.0")
@@ -481,32 +492,38 @@ class ModeltrainingGUI:
         self.eta_min_var = tk.StringVar(value="0")
         self.step_size_var = tk.StringVar(value="5")
         self.gamma_lr_var = tk.StringVar(value="0.5")
-        self.topoloss_path_var = tk.StringVar(value="64")
 
-        self.loss_func_var = tk.StringVar(value="FocalTversky")
-        self.loss_func1_var = tk.StringVar(value="FocalTversky")
-        self.loss_func2_var = tk.StringVar(value="FocalTversky")
-        self.loss_func1_weight_var = tk.StringVar(value="0.5")
-        self.loss_func2_weight_var = tk.StringVar(value="0.5")
+        self.loss_function_var = tk.StringVar(value="FocalTversky")
+        self.loss_function1_var = tk.StringVar(value="FocalTversky")
+        self.loss_function2_var = tk.StringVar(value="FocalTversky")
+        self.loss_function1_weight_var = tk.StringVar(value="0.5")
+        self.loss_function2_weight_var = tk.StringVar(value="0.5")
         self.alpha_var = tk.StringVar(value="0.7")
         self.beta_var = tk.StringVar(value="0.3")
         self.gamma_var = tk.StringVar(value="1.3333")
+        self.positive_weight_var = tk.StringVar(value="1")
+        self.topoloss_patch_var = tk.StringVar(value="64")
+        self.alpha_focal_var = tk.StringVar(value="0.8")
+        self.gamma_focal_var = tk.StringVar(value="2")
 
         self.epochs_var = tk.StringVar(value="1")
         self.batch_size_var = tk.StringVar(value="6")
         self.data_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\data")
-        self.out_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\runs")
+        self.output_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\runs")
         self.normalize_var = tk.BooleanVar(value=False)
+        self.negative_var = tk.BooleanVar(value=False)
+        self.transform_var = tk.StringVar(value="")
         
         # testing variables
         self.test_model_path_var = tk.StringVar(value="")
         self.test_data_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\data\\test")
         self.test_batch_size_var = tk.StringVar(value="6")
         self.test_normalize_var = tk.BooleanVar(value=False)
+        self.test_negative_var = tk.BooleanVar(value=False)
         
         # Dataset tab index entry
         self.dataset_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\data\\val")
-        self.dataset_index_var = tk.StringVar() # Variable to store index input
+        self.dataset_index_var = tk.StringVar() 
         
 
     def validate_numeric_input(self, new_value):
@@ -550,42 +567,16 @@ class ModeltrainingGUI:
             #self.window.update_idletasks() # no need for this here, update() is stronger
 
     def save_config(self):
-        config = {
-            "model": self.model_var.get(),
-            "attention": self.attention_var.get(),
-            "batchnorm": self.batchnorm_var.get(),
-            "encoder": self.encoder_var.get(),
-            "pretrained_weights": self.pretrained_weights_var.get(),
-            "optimizer": self.optimizer_var.get(),
-            "lr": self.lr_var.get(),
-            "momentum": self.momentum_var.get(),
-            "weight_decay": self.weight_decay_var.get(),
-            "warmup_scheduler": self.warmup_var.get(), 
-            "warmup_steps": self.linear_warmup_steps_var.get(),
-            "scheduler": self.scheduler_var.get(),
-            "start_factor": self.start_factor_var.get(),
-            "end_factor": self.end_factor_var.get(),
-            "iterations": self.iterations_var.get(),
-            "t_max": self.t_max_var.get(),
-            "eta_min": self.eta_min_var.get(),
-            "step_size": self.step_size_var.get(),
-            "gamma_lr": self.gamma_lr_var.get(),
-            "topoloss_patch" : self.topoloss_path_var.get(),
-            "loss_func": self.loss_func_var.get(),
-            "loss_func1": self.loss_func1_var.get(),
-            "loss_func2": self.loss_func2_var.get(),
-            "loss_func1_weight": self.loss_func1_weight_var.get(),
-            "loss_func2_weight": self.loss_func2_weight_var.get(),
-            "alpha": self.alpha_var.get(),
-            "beta": self.beta_var.get(),
-            "gamma": self.gamma_var.get(),
-            "epochs": self.epochs_var.get(),
-            "batch_size": self.batch_size_var.get(),
-            "data_dir": self.data_dir_var.get(),
-            "out_dir": self.out_dir_var.get(),
-            "normalize" : self.normalize_var.get(),
-            "transform": self.transforms_widget.get_sequence()
-        }
+        """Saves the configuration dynamically."""
+        config = {}
+        for name, value in self.__dict__.items():
+            if not "test" in name and not "dataset" in name:
+                if name.endswith("_var") and isinstance(value, (tk.StringVar, tk.IntVar, tk.BooleanVar, ctk.StringVar, ctk.IntVar, ctk.BooleanVar)):  # Add customtkinter types
+                    config[name.replace("_var", "")] = value.get()
+
+        # Add any other configurations that aren't Tkinter variables.
+        if hasattr(self, 'transforms_widget'):
+            config['transform'] = self.transforms_widget.get_sequence()
 
         file_path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
         if file_path:
@@ -597,49 +588,34 @@ class ModeltrainingGUI:
                 
     def load_config(self):
         file_path = filedialog.askopenfilename(defaultextension=".json", filetypes=[("JSON files", "*.json")])
-        if file_path:
-            try:
-                with open(file_path, 'r') as f:
-                    config = json.load(f)
-                self.model_var.set(config.get("model", ""))
-                self.attention_var.set(config.get("attention", ""))
-                self.batchnorm_var.set(config.get("batchnorm", ""))
-                self.encoder_var.set(config.get("encoder", ""))
-                self.pretrained_weights_var.set(config.get("pretrained_weights", False))
-                self.optimizer_var.set(config.get("optimizer", ""))
-                self.lr_var.set(config.get("lr", ""))
-                self.momentum_var.set(config.get("momentum", ""))
-                self.weight_decay_var.set(config.get("weight_decay", ""))
-                self.warmup_var.set(config.get("warmup_scheduler", ""))
-                self.linear_warmup_steps_var.set(config.get("warmup_steps", ""))
-                self.scheduler_var.set(config.get("scheduler", ""))
-                self.start_factor_var.set(config.get("start_factor", ""))
-                self.end_factor_var.set(config.get("end_factor", ""))
-                self.iterations_var.set(config.get("iterations", ""))
-                self.t_max_var.set(config.get("t_max", ""))
-                self.eta_min_var.set(config.get("eta_min", ""))
-                self.step_size_var.set(config.get("step_size", ""))
-                self.gamma_lr_var.set(config.get("gamma_lr", ""))
-                self.topoloss_path_var.set(config.get("topoloss_patch", ""))
-                self.loss_func_var.set(config.get("loss_func", ""))
-                self.loss_func1_var.set(config.get("loss_func1", ""))
-                self.loss_func2_var.set(config.get("loss_func2", ""))
-                self.loss_func1_weight_var.set(config.get("loss_func1_weight", ""))
-                self.loss_func2_weight_var.set(config.get("loss_func2_weight", ""))
-                self.alpha_var.set(config.get("alpha", ""))
-                self.beta_var.set(config.get("beta", ""))
-                self.gamma_var.set(config.get("gamma", ""))
-                self.epochs_var.set(config.get("epochs", ""))
-                self.batch_size_var.set(config.get("batch_size", ""))
-                self.data_dir_var.set(config.get("data_dir", ""))
-                self.out_dir_var.set(config.get("out_dir", ""))
-                self.normalize_var.set(config.get("normalize", ""))
-                
+        if not file_path:  # User cancelled the file dialog
+            return
+        
+        try:
+            with open(file_path, 'r') as f:
+                config = json.load(f)
+            # Iterate through the loaded configuration
+            for key, value in config.items():
+                var_name = key + "_var"  # Construct the expected variable name
+                if hasattr(self, var_name):  # Check if the attribute exists
+                    var = getattr(self, var_name)  # Get the Tkinter variable
+                    if isinstance(var, (tk.StringVar, tk.IntVar, tk.BooleanVar, ctk.StringVar, ctk.IntVar, ctk.BooleanVar)):
+                        var.set(value)  # Set the value
+                    else:
+                        print(f"Warning: Attribute {var_name} is not a Tkinter variable.")
+                else:
+                    print(f"Warning: No matching variable found for config key: {key}")
+               
+            if 'transform' in config and hasattr(self, 'transforms_widget'):
                 self.transforms_widget.load_config(config_string=config.get("transform", ""))
                      
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to load configuration: {e}")
-
+        except FileNotFoundError:
+            messagebox.showerror("Error", "Configuration file not found.")
+        except json.JSONDecodeError:
+            messagebox.showerror("Error", "Invalid JSON format in the configuration file.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load configuration: {e}")
+                     
     def toggle_options(self, frame, row, button, update_function=None):
 
         if frame.winfo_ismapped():
@@ -696,9 +672,9 @@ class ModeltrainingGUI:
         for widget in self.warmup_options_frame.winfo_children():
             widget.destroy()
 
-        if self.warmup_var.get() == "Linear":
+        if self.warmup_scheduler_var.get() == "Linear":
             ctk.CTkLabel(self.warmup_options_frame, text="Warmup Steps").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(self.warmup_options_frame, textvariable=self.linear_warmup_steps_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+            ctk.CTkEntry(self.warmup_options_frame, textvariable=self.warmup_steps_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
         else:
             ctk.CTkLabel(self.warmup_options_frame, text="No options for selected scheduler").grid(row=0, column=0, columnspan=3, sticky="e", padx=5, pady=5)
@@ -737,16 +713,16 @@ class ModeltrainingGUI:
     def update_loss_function_options(self, calling_frame, *args):
         # Remove existing traces for submenus if they exist
         if hasattr(self, 'loss_func1_trace_id') and self.loss_func1_trace_id:
-            self.loss_func1_var.trace_remove("write", self.loss_func1_trace_id)
+            self.loss_function1_var.trace_remove("write", self.loss_func1_trace_id)
             self.loss_func1_trace_id = None
         if hasattr(self, 'loss_func2_trace_id') and self.loss_func2_trace_id:
-            self.loss_func2_var.trace_remove("write", self.loss_func2_trace_id)
+            self.loss_function2_var.trace_remove("write", self.loss_func2_trace_id)
             self.loss_func2_trace_id = None
         
         for widget in calling_frame.winfo_children():
             widget.destroy()
 
-        if self.loss_func_var.get() == "FocalTversky":
+        if self.loss_function_var.get() == "FocalTversky":
             ctk.CTkLabel(calling_frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkEntry(calling_frame, textvariable=self.alpha_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
@@ -756,87 +732,123 @@ class ModeltrainingGUI:
             ctk.CTkLabel(calling_frame, text="Gamma").grid(row=2, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkEntry(calling_frame, textvariable=self.gamma_var).grid(row=2, column=1, sticky="w", padx=5, pady=5)
 
-        elif self.loss_func_var.get() == "Tversky":
+        elif self.loss_function_var.get() == "Tversky":
             ctk.CTkLabel(calling_frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkEntry(calling_frame, textvariable=self.alpha_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
             ctk.CTkLabel(calling_frame, text="Beta").grid(row=1, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkEntry(calling_frame, textvariable=self.beta_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
             
-        elif self.loss_func_var.get() == "Topoloss":
-            ctk.CTkLabel(calling_frame, text="Patch Size").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(calling_frame, textvariable=self.topoloss_path_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        elif self.loss_function_var.get() == "Focal":
+            ctk.CTkLabel(calling_frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.alpha_focal_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
-        elif self.loss_func_var.get() == "Combo":
+            ctk.CTkLabel(calling_frame, text="Gamma").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.gamma_focal_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        
+        elif self.loss_function_var.get() == "BCE":
+            ctk.CTkLabel(calling_frame, text="Pos Weight").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.positive_weight_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        
+        elif self.loss_function_var.get() == "Topoloss":
+            ctk.CTkLabel(calling_frame, text="Patch Size").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.topoloss_patch_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+
+        elif self.loss_function_var.get() == "Combo":
             ctk.CTkLabel(calling_frame, text="1").grid(row=0, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkComboBox(calling_frame, values=["FocalTversky",
                                                     "Tversky",
+                                                    "BCE",
+                                                    "Dice",
+                                                    "LCDice",
+                                                    "Focal",
                                                     "Topoloss",
-                                                    "IoU"], variable=self.loss_func1_var).grid(row=0, column=1, sticky="e", padx=5, pady=5)
+                                                    "IoU"], variable=self.loss_function1_var).grid(row=0, column=1, sticky="e", padx=5, pady=5)
             self.loss_function_options_frame1 = ctk.CTkFrame(calling_frame)
             loss_function_option_button1 = ctk.CTkButton(calling_frame, text="\u25BC", width=30)
             loss_function_option_button1.configure(command=lambda btn=loss_function_option_button1: self.toggle_options(self.loss_function_options_frame1, row=1, button=btn, update_function= lambda: self.update_loss_function_submenu(1)))
             loss_function_option_button1.grid(row=0, column=2, sticky="w", padx=5, pady=5)
             ctk.CTkLabel(calling_frame, text="w").grid(row=0, column=3, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(calling_frame, textvariable=self.loss_func1_weight_var, width=40).grid(row=0, column=4, sticky="w", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.loss_function1_weight_var, width=40).grid(row=0, column=4, sticky="w", padx=5, pady=5)
             
             
             ctk.CTkLabel(calling_frame, text="2").grid(row=2, column=0, sticky="e", padx=5, pady=5)
             ctk.CTkComboBox(calling_frame, values=["FocalTversky",
                                                     "Tversky",
+                                                    "BCE",
+                                                    "Dice",
+                                                    "LCDice",
+                                                    "Focal",
                                                     "Topoloss",
-                                                    "IoU"], variable=self.loss_func2_var).grid(row=2, column=1, sticky="e", padx=5, pady=5)
+                                                    "IoU"], variable=self.loss_function2_var).grid(row=2, column=1, sticky="e", padx=5, pady=5)
             self.loss_function_options_frame2 = ctk.CTkFrame(calling_frame)
             loss_function_option_button2 = ctk.CTkButton(calling_frame, text="\u25BC", width=30, )
             loss_function_option_button2.configure(command=lambda btn=loss_function_option_button2: self.toggle_options(self.loss_function_options_frame2, row=3, button=btn, update_function= lambda: self.update_loss_function_submenu(2)))
             loss_function_option_button2.grid(row=2, column=2, sticky="w", padx=5, pady=5)
             ctk.CTkLabel(calling_frame, text="w").grid(row=2, column=3, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(calling_frame, textvariable=self.loss_func2_weight_var, width=40).grid(row=2, column=4, sticky="w", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.loss_function2_weight_var, width=40).grid(row=2, column=4, sticky="w", padx=5, pady=5)
             
             self.update_loss_function_submenu(1)
             self.update_loss_function_submenu(2)
 
         else:
-            return
+            ctk.CTkLabel(calling_frame, text="No options for selected loss function").grid(row=0, column=0, columnspan=3, sticky="e", padx=5, pady=5)
             
-        if self.loss_func_var.get() == "Combo":
-            self.loss_func1_trace_id = self.loss_func1_var.trace_add("write", lambda *args: self.update_loss_function_submenu(1))
-            self.loss_func2_trace_id = self.loss_func2_var.trace_add("write", lambda *args: self.update_loss_function_submenu(2))
+        if self.loss_function_var.get() == "Combo":
+            self.loss_func1_trace_id = self.loss_function1_var.trace_add("write", lambda *args: self.update_loss_function_submenu(1))
+            self.loss_func2_trace_id = self.loss_function2_var.trace_add("write", lambda *args: self.update_loss_function_submenu(2))
       
     def update_loss_function_submenu(self, option, *args):
         if option == 1:
-            frame = self.loss_function_options_frame1
-            loss_func_var = self.loss_func1_var
+            calling_frame = self.loss_function_options_frame1
+            loss_function_var = self.loss_function1_var
         elif option == 2:
-            frame = self.loss_function_options_frame2
-            loss_func_var = self.loss_func2_var
+            calling_frame = self.loss_function_options_frame2
+            loss_function_var = self.loss_function2_var
         else:
             return
         
-        for widget in frame.winfo_children():
+        for widget in calling_frame.winfo_children():
             widget.destroy()
 
-        if loss_func_var.get() == "FocalTversky":
-            ctk.CTkLabel(frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(frame, textvariable=self.alpha_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        if loss_function_var.get() == "FocalTversky":
+            ctk.CTkLabel(calling_frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.alpha_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
-            ctk.CTkLabel(frame, text="Beta").grid(row=1, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(frame, textvariable=self.beta_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(calling_frame, text="Beta").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.beta_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
-            ctk.CTkLabel(frame, text="Gamma").grid(row=2, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(frame, textvariable=self.gamma_var).grid(row=2, column=1, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(calling_frame, text="Gamma").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.gamma_var).grid(row=2, column=1, sticky="w", padx=5, pady=5)
 
-        elif loss_func_var.get() == "Tversky":
-            ctk.CTkLabel(frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(frame, textvariable=self.alpha_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        elif loss_function_var.get() == "Tversky":
+            ctk.CTkLabel(calling_frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.alpha_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
-            ctk.CTkLabel(frame, text="Beta").grid(row=1, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(frame, textvariable=self.beta_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+            ctk.CTkLabel(calling_frame, text="Beta").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.beta_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
             
-        elif loss_func_var.get() == "Topoloss":
-            ctk.CTkLabel(frame, text="Patch").grid(row=0, column=0, sticky="e", padx=5, pady=5)
-            ctk.CTkEntry(frame, textvariable=self.topoloss_path_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        elif loss_function_var.get() == "Topoloss":
+            ctk.CTkLabel(calling_frame, text="Patch").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.topoloss_patch_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+            
+        elif loss_function_var.get() == "Focal":
+            ctk.CTkLabel(calling_frame, text="Alpha").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.alpha_focal_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
+            ctk.CTkLabel(calling_frame, text="Gamma").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.gamma_focal_var).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+            
+        elif loss_function_var.get() == "BCE":
+            ctk.CTkLabel(calling_frame, text="Pos Weight").grid(row=0, column=0, sticky="e", padx=5, pady=5)
+            ctk.CTkEntry(calling_frame, textvariable=self.positive_weight_var).grid(row=0, column=1, sticky="w", padx=5, pady=5)
+        
+        else:
+            ctk.CTkLabel(calling_frame, text="No options for selected loss function").grid(row=0, column=0, columnspan=3, sticky="e", padx=5, pady=5)
+
+    def update_transform_variable(self, new_sequence):
+        self.transform_var.set(str(new_sequence))
+    
     def create_gui(self):
         
         main_frame = ctk.CTkFrame(self.window)
@@ -924,13 +936,13 @@ class ModeltrainingGUI:
         ctk.CTkComboBox(left_frame,
                         values=["None",
                                 "Linear"],
-                        variable=self.warmup_var).grid(row=6, column=1, sticky="w", padx=5, pady=5)
+                        variable=self.warmup_scheduler_var).grid(row=6, column=1, sticky="w", padx=5, pady=5)
 
         self.warmup_options_frame = ctk.CTkFrame(left_frame)
         warmup_options_button = ctk.CTkButton(left_frame, text="\u25BC", width=30)
         warmup_options_button.configure(command=lambda btn=warmup_options_button: self.toggle_options(self.warmup_options_frame, row=7, button=btn, update_function=self.update_warmup_options))
         warmup_options_button.grid(row=6, column=2, sticky="w", padx=5, pady=5)
-        self.warmup_var.trace_add("write", self.update_warmup_options)
+        self.warmup_scheduler_var.trace_add("write", self.update_warmup_options)
 
         ###############################################################################################################
         # Scheduler selection and dropdown
@@ -950,20 +962,24 @@ class ModeltrainingGUI:
         ctk.CTkLabel(left_frame, text="Loss function").grid(row=10, column=0, sticky="e", padx=5, pady=5)
         ctk.CTkComboBox(left_frame, values=["FocalTversky",
                                             "Tversky",
+                                            "BCE",
+                                            "Dice",
+                                            "LCDice",
                                             "IoU",
+                                            "Focal",
                                             "Topoloss",
-                                            "Combo"], variable=self.loss_func_var).grid(row=10, column=1, sticky="w", padx=5, pady=5)
+                                            "Combo"], variable=self.loss_function_var).grid(row=10, column=1, sticky="w", padx=5, pady=5)
         self.loss_function_options_frame = ctk.CTkFrame(left_frame)
         loss_function_option_button = ctk.CTkButton(left_frame, text="\u25BC", width=30)
         loss_function_option_button.configure(command=lambda btn=loss_function_option_button: self.toggle_options(self.loss_function_options_frame, row=11, button=btn, update_function=self.update_loss_function_options(self.loss_function_options_frame)))
         loss_function_option_button.grid(row=10, column=2, sticky="w", padx=5, pady=5)
-        self.loss_func_var.trace_add("write", lambda *args: self.update_loss_function_options(self.loss_function_options_frame, *args))
+        self.loss_function_var.trace_add("write", lambda *args: self.update_loss_function_options(self.loss_function_options_frame, *args))
 
         ###############################################################################################################
         # Data Dir and Out Dir with Browse Buttons
         for i, dir_label in enumerate(["Data Dir", "Out Dir"], start=12):
             ctk.CTkLabel(left_frame, text=dir_label).grid(row=i, column=0, sticky="e", padx=5, pady=5)
-            dir_entry = ctk.CTkEntry(left_frame, textvariable=self.data_dir_var if dir_label == "Data Dir" else self.out_dir_var)
+            dir_entry = ctk.CTkEntry(left_frame, textvariable=self.data_dir_var if dir_label == "Data Dir" else self.output_dir_var)
             dir_entry.grid(row=i, column=1, sticky="w", padx=5, pady=5)
             browse_button = ctk.CTkButton(left_frame, text="...", width=30, command=lambda entry=dir_entry: self.browse_dir(entry))
             browse_button.grid(row=i, column=2, sticky="w", padx=5, pady=5)
@@ -977,15 +993,18 @@ class ModeltrainingGUI:
         ctk.CTkLabel(left_frame, text="Normalize").grid(row=16, column=0, sticky="e", padx=5, pady=5)
         ctk.CTkSwitch(left_frame, text="", variable=self.normalize_var, onvalue=True, offvalue=False).grid(row=16, column=1, sticky="w", padx=5, pady=5)
 
+        ctk.CTkLabel(left_frame, text="Negative").grid(row=17, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkSwitch(left_frame, text="", variable=self.negative_var, onvalue=True, offvalue=False).grid(row=17, column=1, sticky="w", padx=5, pady=5)
+        
         available_transforms = ["transforms.ToTensor", "transforms.Resize"]
-        self.transforms_widget = TransformWidget(left_frame, available_transforms=available_transforms)
-        self.transforms_widget.grid(row=17, column=0, columnspan=3, sticky="we", padx=5, pady=5)
+        self.transforms_widget = TransformWidget(left_frame, available_transforms=available_transforms, update_callback=self.update_transform_variable)
+        self.transforms_widget.grid(row=18, column=0, columnspan=3, sticky="we", padx=5, pady=5)
 
         train_button = ctk.CTkButton(left_frame, text="Start training", command=self.start_training, height=30)
-        train_button.grid(row=18, columnspan=3, sticky="we", padx=5, pady=5)
+        train_button.grid(row=19, columnspan=3, sticky="we", padx=5, pady=5)
         
         config_frame = ctk.CTkFrame(left_frame)
-        config_frame.grid(row=19, columnspan=3, sticky="we", padx=5, pady=5)
+        config_frame.grid(row=20, columnspan=3, sticky="we", padx=5, pady=5)
         
         save_config = ctk.CTkButton(config_frame, text="Save Configs", command=self.save_config)
         save_config.grid(row=0, column=0,  sticky="w", padx=5, pady=5)
@@ -994,7 +1013,7 @@ class ModeltrainingGUI:
         load_config.grid(row=0, column=1,  sticky="e", padx=5, pady=5)
 
         slider = ctk.CTkSlider(left_frame, from_=0.8, to=1.6, number_of_steps=10, command=self.change_scaling_event)
-        slider.grid(row=20,columnspan=3, sticky="we", padx=5, pady=5)
+        slider.grid(row=21,columnspan=3, sticky="we", padx=5, pady=5)
   
     def create_testing_tab(self, parent):
         container_frame = ctk.CTkFrame(parent)
@@ -1059,12 +1078,12 @@ class ModeltrainingGUI:
         loss_function_dropdown = ctk.CTkComboBox(left_frame, values=["FocalTversky",
                                                                      "Tversky",
                                                                      "IoU",
-                                                                     "Combo"], variable=self.loss_func_var).grid(row=5, column=1, sticky="w", padx=5, pady=5)
+                                                                     "Combo"], variable=self.loss_function_var).grid(row=5, column=1, sticky="w", padx=5, pady=5)
         self.test_loss_function_options_frame = ctk.CTkFrame(left_frame)
         loss_function_option_button = ctk.CTkButton(left_frame, text="\u25BC", width=30, )
         loss_function_option_button.configure(command=lambda btn=loss_function_option_button: self.toggle_options(self.test_loss_function_options_frame, row=6, button=btn, update_function=self.update_loss_function_options(self.test_loss_function_options_frame)))
         loss_function_option_button.grid(row=5, column=2, sticky="w", padx=5, pady=5)
-        self.loss_func_var.trace_add("write", lambda *args: self.update_loss_function_options(self.test_loss_function_options_frame, *args))
+        self.loss_function_var.trace_add("write", lambda *args: self.update_loss_function_options(self.test_loss_function_options_frame, *args))
         
         ###############################################################################################################
         # Data dir and other
@@ -1079,16 +1098,19 @@ class ModeltrainingGUI:
         
         ctk.CTkLabel(left_frame, text="Normalize").grid(row=8, column=0, sticky="e", padx=5, pady=5)
         ctk.CTkSwitch(left_frame, text="", variable=self.test_normalize_var, onvalue=True, offvalue=False).grid(row=8, column=1, sticky="w", padx=5, pady=5)
+        
+        ctk.CTkLabel(left_frame, text="Negative").grid(row=9, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkSwitch(left_frame, text="", variable=self.test_negative_var, onvalue=True, offvalue=False).grid(row=9, column=1, sticky="w", padx=5, pady=5)
 
         available_transforms = ["transforms.ToTensor", "transforms.Resize"]
-        self.test_transforms_widget = TransformWidget(left_frame, available_transforms=available_transforms)
-        self.test_transforms_widget.grid(row=9, column=0, columnspan=3, sticky="we", padx=5, pady=5)
+        self.test_transforms_widget = TransformWidget(left_frame, available_transforms=available_transforms, update_callback=self.update_transform_variable)
+        self.test_transforms_widget.grid(row=10, column=0, columnspan=3, sticky="we", padx=5, pady=5)
 
         test_button = ctk.CTkButton(left_frame, text="Start testing", command=self.start_testing, height=30)
-        test_button.grid(row=10, columnspan=3, sticky="we", padx=5, pady=5)
+        test_button.grid(row=11, columnspan=3, sticky="we", padx=5, pady=5)
         
         slider = ctk.CTkSlider(left_frame, from_=0.8, to=1.6, number_of_steps=10, command=self.change_scaling_event)
-        slider.grid(row=11,columnspan=3, sticky="we", padx=5, pady=5)
+        slider.grid(row=12,columnspan=3, sticky="we", padx=5, pady=5)
     
     def create_dataset_tab(self, parent):
         container_frame = ctk.CTkFrame(parent)
@@ -1097,6 +1119,7 @@ class ModeltrainingGUI:
         left_frame = ctk.CTkScrollableFrame(container_frame, width=300)
         left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+        
         # Dataset Directory Selection
         ctk.CTkLabel(left_frame, text="Dataset Dir").grid(row=0, column=0, sticky="e", padx=5, pady=5)
         dataset_dir_entry = ctk.CTkEntry(left_frame, textvariable=self.dataset_dir_var)
@@ -1109,23 +1132,26 @@ class ModeltrainingGUI:
         index_entry = ctk.CTkEntry(left_frame, textvariable=self.dataset_index_var, width=50)
         index_entry.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
+        ctk.CTkLabel(left_frame, text="Negative").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkSwitch(left_frame, text="", variable=self.negative_var, onvalue=True, offvalue=False).grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        
         # Visualization Buttons
         button_width = 20  # Adjust button width as needed
 
         visualize_button = ctk.CTkButton(left_frame, text="Visualize Dataset", width=button_width, command=self.visualize_dataset_clicked)
-        visualize_button.grid(row=2, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        visualize_button.grid(row=3, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
 
         class_dist_button = ctk.CTkButton(left_frame, text="Class Distribution", width=button_width, command=self.class_distribution_clicked)
-        class_dist_button.grid(row=3, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        class_dist_button.grid(row=4, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
 
         overlay_button = ctk.CTkButton(left_frame, text="Visualize Overlay", width=button_width, command=self.visualize_overlay_clicked)
-        overlay_button.grid(row=4, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        overlay_button.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
 
         histogram_button = ctk.CTkButton(left_frame, text="Image Histogram", width=button_width, command=self.image_histogram_clicked)
-        histogram_button.grid(row=5, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
+        histogram_button.grid(row=6, column=0, columnspan=3, sticky="ew", padx=5, pady=5)
         
         slider = ctk.CTkSlider(left_frame, from_=0.8, to=1.6, number_of_steps=10, command=self.change_scaling_event)
-        slider.grid(row=6,columnspan=3, sticky="we", padx=5, pady=5)
+        slider.grid(row=7,columnspan=3, sticky="we", padx=5, pady=5)
     
     def visualize_dataset_clicked(self):
         self.load_and_visualize("visualize_dataset")
@@ -1140,13 +1166,13 @@ class ModeltrainingGUI:
         self.load_and_visualize("image_histogram")
 
     def load_and_visualize(self, visualization_type):
-        data_dir = self.data_dir_var.get()
-        if not data_dir:
+        dataset_dir = self.dataset_dir_var.get()
+        if not dataset_dir:
             messagebox.showerror("Error", "Please select a dataset directory.")
             return
 
-        image_dir = os.path.join(data_dir, "images")
-        mask_dir = os.path.join(data_dir, "masks")
+        image_dir = os.path.join(dataset_dir, "images")
+        mask_dir = os.path.join(dataset_dir, "masks")
 
         # Check if image and mask directories exist
         if not os.path.exists(image_dir) or not os.path.exists(mask_dir):
@@ -1159,7 +1185,7 @@ class ModeltrainingGUI:
         ])
 
         try:
-            dataset = SegmentationDataset(image_dir, mask_dir, image_transform=transform, mask_transform=transform)
+            dataset = SegmentationDataset(image_dir, mask_dir, image_transform=transform, mask_transform=transform, negative=bool(self.negative_var.get()))
             index_str = self.dataset_index_var.get()
             index = None # Default index is None, for random selection
 
@@ -1208,23 +1234,65 @@ class ModeltrainingGUI:
         message_frame = ctk.CTkFrame(content_frame)
         message_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Terminal-style Text widget
         self.messages_box = tk.Text(
             message_frame,
             wrap=tk.WORD,
-            bg="black",  # Black background
-            fg="white",  # White foreground (text color)
-            font=("Courier New", 16),  # Monospace font, larger size
-            insertbackground="white",  # cursor color
-            selectbackground="#333333",  # selected text color
-            selectforeground="white",
-            height=8
+            bg="#1e1e1e",  # Dark grey background
+            fg="#d4d4d4",  # Light grey text
+            font=("Courier New", 16),
+            insertbackground="#d4d4d4",
+            selectbackground="#555555",
+            selectforeground="#d4d4d4",
+            height=8,
+            relief=tk.FLAT,
+            bd=0
         )
-        scrollbar = tk.Scrollbar(message_frame, command=self.messages_box.yview)
+
+        # --- ttk Scrollbar (Dark Mode, handles disabled state) ---
+        style = ttk.Style()
+        style.theme_use('clam')
+
+        # --- Define custom elements and layout ---
+        style.element_create('Custom.Vertical.Scrollbar.trough', 'from', 'default')
+        style.layout('Custom.Vertical.TScrollbar', [
+            ('Custom.Vertical.Scrollbar.trough', {'sticky': 'ns', 'children': [
+                ('Vertical.Scrollbar.thumb', {'expand': True, 'sticky': 'nswe'}),
+                # IMPORTANT: Arrows are *separate* elements
+                ('Vertical.Scrollbar.uparrow', {'side': 'top', 'sticky': 'we'}),
+                ('Vertical.Scrollbar.downarrow', {'side': 'bottom', 'sticky': 'we'}),
+            ]}),
+        ])
+
+        # --- Configure colors, including for disabled state ---
+        style.configure("Custom.Vertical.TScrollbar",
+            background="#2a2a2a",  # Thumb color
+            troughcolor="#121212",  # Trough color (what we want)
+            bordercolor="#121212",
+            arrowcolor="#d4d4d4",
+            darkcolor="#121212",
+            lightcolor="#121212",
+            gripcount=0,
+        )
+
+        # --- Map disabled state to custom colors ---
+        style.map("Custom.Vertical.TScrollbar",
+            background=[('disabled', '#1e1e1e')],  # Thumb when disabled
+            troughcolor=[('disabled', '#121212')], # Trough when disabled
+            bordercolor=[('disabled', '#121212')],
+            arrowcolor=[('disabled', '#3a3a3a')],  # Darker arrows when disabled
+            darkcolor=[('disabled', '#121212')],
+            lightcolor=[('disabled', '#121212')],
+        )
+
+        scrollbar = ttk.Scrollbar(message_frame, orient="vertical",
+                                   command=self.messages_box.yview,
+                                   style="Custom.Vertical.TScrollbar")
         self.messages_box.config(yscrollcommand=scrollbar.set)
+
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.messages_box.pack(fill=tk.BOTH, expand=True)
+        self.messages_box.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         self.messages_box.config(state=tk.DISABLED)
+        
 
         def adjust_height(event=None):
             total_height = content_frame.winfo_height()
@@ -1277,7 +1345,7 @@ class ModeltrainingGUI:
         try:
             # Extract the part after \exp from the message
             exp_part = message.split("\\exp")[1].split("\\")[0]  # Get the number after \exp
-            new_dir = os.path.join(self.out_dir_var.get(), "exp" + exp_part, "results", "image_evolution")
+            new_dir = os.path.join(self.output_dir_var.get(), "exp" + exp_part, "results", "image_evolution")
             self.image_evolution_dir = new_dir # Update the directory
             self.plot_panel.set_image_dir(new_dir)  # Set the new directory for the plot panel
 
@@ -1315,101 +1383,28 @@ class ModeltrainingGUI:
     
     def run_training_in_thread(self):
         try:
-            # Retrieve values DIRECTLY from GUI variables
-            model = self.model_var.get()
-            attention = self.attention_var.get()
-            batchnorm = self.batchnorm_var.get()
+            args = ["python", "train.py"]  
 
-            encoder = self.encoder_var.get()
-            pretrained_weights = self.pretrained_weights_var.get()
+            # Dynamically build the argument list based on _var attributes
+            for name, var in self.__dict__.items():
+                if not "test" in name and not "dataset" in name:
+                    if name.endswith("_var") and isinstance(var, (tk.StringVar, tk.IntVar, tk.BooleanVar, ctk.StringVar, ctk.IntVar, ctk.BooleanVar)):
+                        key = name.replace("_var", "")  # Remove "_var" for the argument name
 
-            optimizer = self.optimizer_var.get()
-            lr = self.lr_var.get()
-            momentum = self.momentum_var.get()
-            weight_decay = self.weight_decay_var.get()
+                        # Handle boolean variables differently (append only if True)
+                        if isinstance(var, (tk.BooleanVar, ctk.BooleanVar)):
+                            if var.get():  # Only add the argument if it's True
+                                if key == "pretrained_weights":
+                                    args.append("--pretrained_weights")
+                                elif key == "normalize":
+                                    args.append("--normalize")
+                                elif key == "negative":
+                                    args.append("--negative")
+                               
+                        else: # Handle all stringVars
+                            args.extend([f"--{key}", str(var.get())])
             
-            warmup_scheduler = self.warmup_var.get()
-            linear_warmup_steps = self.linear_warmup_steps_var.get()
-
-            scheduler = self.scheduler_var.get()
-            start_factor = self.start_factor_var.get()
-            end_factor = self.end_factor_var.get()
-            iterations = self.iterations_var.get()
-            t_max = self.t_max_var.get()
-            eta_min = self.eta_min_var.get()
-            step_size = self.step_size_var.get()
-            gamma_lr = self.gamma_lr_var.get()
-            topoloss_patch = self.topoloss_path_var.get()
-
-            loss_func = self.loss_func_var.get()
-            alpha = self.alpha_var.get()
-            beta = self.beta_var.get()
-            gamma = self.gamma_var.get()
-            
-            # Combo loss
-            loss_func1 = self.loss_func1_var.get()
-            loss_func1_weight = self.loss_func1_weight_var.get()
-            loss_func2 = self.loss_func2_var.get()
-            loss_func2_weight = self.loss_func2_weight_var.get()
-
-            data_dir = self.data_dir_var.get()
-            batch_size = self.batch_size_var.get()
-            epochs = self.epochs_var.get()
-            output_dir = self.out_dir_var.get()
-            normalize = self.normalize_var.get()
-            transform = self.transforms_widget.get_sequence()
-
-
-            # Construct the command
-            args = ["python", "train.py"]  # Replace with your script name
-
-            args.extend(["--model", str(model)])
-            args.extend(["--attention", str(attention)])
-            args.extend(["--batchnorm", str(batchnorm)])        
-
-            args.extend(["--encoder", str(encoder)])
-            if pretrained_weights:
-                args.append("--weights")
-
-            args.extend(["--optimizer", str(optimizer)])
-            args.extend(["--lr", str(lr)])
-            args.extend(["--momentum", str(momentum)])
-            args.extend(["--weight_decay", str(weight_decay)])
-
-            args.extend(["--warmup_scheduler", str(warmup_scheduler)])
-            args.extend(["--warmup_steps", str(linear_warmup_steps)])
-
-            args.extend(["--scheduler", str(scheduler)])
-            args.extend(["--start_factor", str(start_factor)])
-            args.extend(["--end_factor", str(end_factor)])
-            args.extend(["--iterations", str(iterations)])
-            args.extend(["--t_max", str(t_max)])
-            args.extend(["--eta_min", str(eta_min)])
-            args.extend(["--step_size", str(step_size)])
-            args.extend(["--gamma_lr", str(gamma_lr)])
-
-            args.extend(["--loss_function", str(loss_func)])
-            args.extend(["--alpha", str(alpha)])
-            args.extend(["--beta", str(beta)])
-            args.extend(["--gamma", str(gamma)])
-            args.extend(["--topoloss_patch", str(topoloss_patch)])
-
-            args.extend(["--loss_function1", str(loss_func1)])
-            args.extend(["--loss_function1_weight", str(loss_func1_weight)])
-            args.extend(["--loss_function2", str(loss_func2)])
-            args.extend(["--loss_function2_weight", str(loss_func2_weight)])
-
-            args.extend(["--batch_size", str(batch_size)])
-            args.extend(["--epochs", str(epochs)])
-
-            args.extend(["--data_dir", str(data_dir)])
-            args.extend(["--output_dir", str(output_dir)])
-
-            args.extend(["--transform", str(transform)])
-            if normalize:
-                args.append("--normalize")
-            
-            self.message_queue.put(f"Starting training with arguments: {' '.join(args)}")
+            # self.message_queue.put(f"Starting training with arguments: {' '.join(args)}")
             process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=os.getcwd()) #added cwd
 
             while True:
@@ -1452,16 +1447,16 @@ class ModeltrainingGUI:
             weights = self.pretrained_weights_var.get()
             model_path = self.test_model_path_var.get()
             
-            loss_func = self.loss_func_var.get()
+            loss_func = self.loss_function_var.get()
             alpha = self.alpha_var.get()
             beta = self.beta_var.get()  
             gamma = self.gamma_var.get()
             
             # Combo loss
-            loss_func1 = self.loss_func1_var.get()
-            loss_func1_weight = self.loss_func1_weight_var.get()
-            loss_func2 = self.loss_func2_var.get()
-            loss_func2_weight = self.loss_func2_weight_var.get()
+            loss_func1 = self.loss_function1_var.get()
+            loss_func1_weight = self.loss_function1_weight_var.get()
+            loss_func2 = self.loss_function2_var.get()
+            loss_func2_weight = self.loss_function2_weight_var.get()
     
             data_dir = self.test_data_dir_var.get()
             batch_size = int(self.test_batch_size_var.get())
@@ -1495,7 +1490,7 @@ class ModeltrainingGUI:
             if normalize:
                 args.append("--normalize")
 
-            self.message_queue.put(f"Starting testing with arguments: {' '.join(args)}") #debug
+            # self.message_queue.put(f"Starting testing with arguments: {' '.join(args)}") #debug
             # self.message_queue.put("Current Working Directory: " + os.getcwd()) #debug
 
             process = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=os.getcwd()) #added cwd

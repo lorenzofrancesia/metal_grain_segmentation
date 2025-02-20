@@ -216,7 +216,7 @@ class TopologicalLoss(nn.Module):
         Returns:
             torch.Tensor: The topology loss value (tensor).
         """
-
+        likelihood = torch.sigmoid(likelihood)
         topo_cp_weight_map = torch.zeros_like(likelihood, dtype=torch.float, device=self.device)
         topo_cp_ref_map = torch.zeros_like(gt, dtype=torch.float, device=self.device)
         loss_topo = torch.tensor(0.0, device=self.device, requires_grad=True)

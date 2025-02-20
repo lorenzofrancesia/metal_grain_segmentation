@@ -1,5 +1,6 @@
 import os
 from PIL import Image
+import re
 
 def convert_jpg_to_png(folder_path):
     # Ensure the folder exists
@@ -27,5 +28,31 @@ def convert_jpg_to_png(folder_path):
         
         print(f"Converted {jpg_file} to {png_file}")
 
+
+def rename_files_remove_regex(folder_path):
+    try:
+        for filename in os.listdir(folder_path):
+            file_path = os.path.join(folder_path, filename)
+
+            if os.path.isfile(file_path):
+                new_filename = re.sub(r"\._$", "", filename)  # Regex to remove trailing ._
+
+                if new_filename != filename:
+                    new_file_path = os.path.join(folder_path, new_filename)
+                    os.rename(file_path, new_file_path)
+                    print(f"Renamed '{filename}' to '{new_filename}'")
+                else:
+                    print(f"No change needed for '{filename}'")
+
+    except FileNotFoundError:
+        print(f"Error: Folder '{folder_path}' not found.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
+# Example Usage:
+folder_path = "D:\\EBSD\\C950\\output" 
+rename_files_remove_regex(folder_path)
+
 # Example usage
-convert_jpg_to_png("C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\gts")
+# convert_jpg_to_png("C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\gts")
