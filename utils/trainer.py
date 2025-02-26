@@ -613,7 +613,7 @@ class Trainer():
 
         print(f"Best threshold: {best_threshold} with IoU: {best_iou:.4f}")
         
-        self.pr_curve(outputs=all_outputs.numpy().flatten(), targets=all_targets.numpy().flatten())
+        self.pr_curve(outputs=all_outputs.cpu().numpy().flatten(), targets=all_targets.cpu().numpy().flatten())
             
         
         

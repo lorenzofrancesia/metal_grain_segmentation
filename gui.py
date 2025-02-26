@@ -84,6 +84,8 @@ class TransformWidget(ctk.CTkFrame):
         else:
             resize_entry.grid_remove()
             resize_entry.configure(state="disabled")
+            
+        resize_entry.bind("<KeyRelease>", lambda event, item={"dropdown": dropdown, "resize_entry": resize_entry}: self._entry_changed(item))
 
         self.rows.append({"frame": row_frame, "dropdown": dropdown, "resize_entry": resize_entry, "delete_btn": delete_btn})
         self._update_widget()
@@ -153,6 +155,15 @@ class TransformWidget(ctk.CTkFrame):
     def _update_widget(self):
         if self.update_callback:
             self.update_callback(self.get_sequence())
+            
+    def _entry_changed(self, item):
+        """Updates the transform sequence when the entry changes."""
+        if item["dropdown"].get() == "transforms.Resize":
+            try:  # Basic validation
+                eval(item["resize_entry"].get()) # Check if it's valid Python syntax (tuple)
+                self._update_widget() 
+            except Exception:
+                pass  
 
 class PlotView(ctk.CTkTabview):
     def __init__(self, master, **kwargs):
@@ -1524,9 +1535,9 @@ class ModeltrainingGUI:
             return_code = process.poll()
             self.message_queue.put(f"Testing process finished with return code: {return_code}") #
             if return_code != 0:
-                self.message_queue.put("Training failed.")
+                self.message_queue.put("Testing failed.")
             else:
-                self.message_queue.put("Training Complete!")
+                self.message_queue.put("Testing Complete!")
 
         except ValueError as ve:
             self.message_queue.put(f"Input Error: {ve}")
@@ -1567,6 +1578,11 @@ class ModeltrainingGUI:
         thread.start()
         
     def start_testing(self):
+        # Clear the message box
+        self.messages_box.config(state=tk.NORMAL)
+        self.messages_box.delete("1.0", tk.END)
+        self.messages_box.config(state=tk.DISABLED)
+        
         self.message_queue.put("Starting testing...")
         thread = threading.Thread(target=self.run_testing_in_thread)
         thread.start()
