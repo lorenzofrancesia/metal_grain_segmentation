@@ -7,7 +7,6 @@ opencv_python_headless==4.10.0.84
 optuna==4.2.0
 Pillow==11.1.0
 PyYAML==6.0.2
-PyYAML==6.0.2
 scikit_learn==1.6.1
 segmentation_models_pytorch==0.4.0
 torch==2.5.1

@@ -6,7 +6,7 @@ from utils.trainer import Trainer
  
 def main():
     
-    args = get_args_train()   
+    args = get_args_train()
 
     model = get_model(args)
     

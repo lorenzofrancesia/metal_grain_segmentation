@@ -475,6 +475,7 @@ class ModeltrainingGUI:
         
         self.encoder_var = tk.StringVar(value="resnet50")
         self.pretrained_weights_var = tk.BooleanVar(value=False)
+        self.freeze_backbone_var = tk.BooleanVar(value=False)
 
         self.optimizer_var = tk.StringVar(value="AdamW")
         self.lr_var = tk.StringVar(value="0.0001")
@@ -918,6 +919,9 @@ class ModeltrainingGUI:
         ctk.CTkLabel(self.encoder_options_frame, text="Pretrained Weights").grid(row=0, column=0, sticky="e", padx=5, pady=5)
         ctk.CTkSwitch(self.encoder_options_frame, text=None, variable=self.pretrained_weights_var, onvalue=True, offvalue=False).grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
+        ctk.CTkLabel(self.encoder_options_frame, text="Freeze Backbone").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkSwitch(self.encoder_options_frame, text=None, variable=self.freeze_backbone_var, onvalue=True, offvalue=False).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        
         ###############################################################################################################
         # Optimizer selection and dropdown
         ctk.CTkLabel(left_frame, text="Optimizer").grid(row=4, column=0, sticky="e", padx=5, pady=5)
@@ -1064,6 +1068,9 @@ class ModeltrainingGUI:
         ctk.CTkLabel(self.test_encoder_options_frame, text="Pretrained Weights").grid(row=0, column=0, sticky="e", padx=5, pady=5)
         ctk.CTkSwitch(self.test_encoder_options_frame, text=None, variable=self.pretrained_weights_var, onvalue=True, offvalue=False).grid(row=0, column=1, sticky="w", padx=5, pady=5)
 
+        ctk.CTkLabel(self.test_encoder_options_frame, text="Freeze Backbone").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkSwitch(self.test_encoder_options_frame, text=None, variable=self.freeze_backbone_var, onvalue=True, offvalue=False).grid(row=1, column=1, sticky="w", padx=5, pady=5)
+        
         ###############################################################################################################
         # Model path
         ctk.CTkLabel(left_frame, text="Model Path").grid(row=4, column=0, sticky="e", padx=5, pady=5)
@@ -1396,6 +1403,8 @@ class ModeltrainingGUI:
                             if var.get():  # Only add the argument if it's True
                                 if key == "pretrained_weights":
                                     args.append("--pretrained_weights")
+                                if key == "freeze_backbone":
+                                    args.append("--freeze_backbone")
                                 elif key == "normalize":
                                     args.append("--normalize")
                                 elif key == "negative":
@@ -1445,6 +1454,7 @@ class ModeltrainingGUI:
             batchnorm = self.batchnorm_var.get()
             encoder = self.encoder_var.get()
             weights = self.pretrained_weights_var.get()
+            freeze = self.freeze_backbone_var.get()
             model_path = self.test_model_path_var.get()
             
             loss_func = self.loss_function_var.get()
@@ -1471,8 +1481,10 @@ class ModeltrainingGUI:
             args.extend(["--batchnorm", batchnorm])
             args.extend(["--encoder", encoder])
             if bool(weights):
-                args.append("--weights")
-            args.extend(["--model_path", model_path])
+                args.append("--pretrained_weights")
+            if bool(freeze):
+                args.append("--freeze_backbone")
+            args.extend(["--test_model_path", model_path])
             
             args.extend(["--loss_function", loss_func])
             args.extend(["--alpha", str(alpha)])

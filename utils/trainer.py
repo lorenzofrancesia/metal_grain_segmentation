@@ -38,7 +38,7 @@ class Trainer():
                  epochs=10,
                  output_dir="../runs",
                  early_stopping=50,
-                 verbose=True, 
+                 verbose=True,
                  config=None,
                  save_output=True
                  ):
@@ -74,6 +74,7 @@ class Trainer():
         if self.save_output:
             self.output_dir = output_dir
             self._initialize_output_folder()
+            
             self.config = config
             self._save_config()
         
@@ -112,9 +113,10 @@ class Trainer():
         
         for sub_dir in [self.exp_dir, self.models_dir, self.results_dir]:
             os.makedirs(sub_dir, exist_ok=True)
-            
+                
     def _save_config(self):
         if self.config:
+            
             config_file  = {
                 "Model Parameters:" : {
                     "model" : self.config.model,
@@ -123,13 +125,18 @@ class Trainer():
                 },
                 "Encoder Parameters:" : {
                     "encoder" : self.config.encoder,
-                    "weights" : self.config.pretrained_weights
+                    "pretrained_weights" : self.config.pretrained_weights,
+                    "freeze_backbone" : self.config.freeze_backbone
                 },
                 "Optimizer Parameters:" : {
                     "optimizer" : self.config.optimizer,
                     "lr" : self.config.lr,
                     "momentum" : self.config.momentum,
                     "weight_decay" : self.config.weight_decay
+                },
+                "Warmup Parameters:" : {
+                    "warmup_scheduler" : self.config.warmup_scheduler,
+                    "warmup_steps" : self.config.warmup_steps
                 },
                 "Scheduler Parameters:" : {
                     "scheduler" : self.config.scheduler,
@@ -140,7 +147,6 @@ class Trainer():
                     "eta_min" : self.config.eta_min,
                     "step_size" : self.config.step_size,
                     "gamma_lr" : self.config.gamma_lr,
-                    "warmup_epochs" : self.config.warmup_steps
                 },
                 "Loss Function Parameters:" : {
                     "loss_function" : self.config.loss_function,
@@ -150,7 +156,11 @@ class Trainer():
                     "loss_function2_weight" : self.config.loss_function2_weight,
                     "alpha" : self.config.alpha,
                     "beta" : self.config.beta,
-                    "gamma" : self.config.gamma
+                    "gamma" : self.config.gamma,
+                    "topoloss_patch" : self.config.topoloss_patch,
+                    "positive_weight" : self.config.positive_weight,
+                    "alpha_focal" : self.config.alpha_focal,
+                    "gamma_focal" : self.config.gamma_focal
                 },
                 "Directories:" : {
                     "data_dir" : self.config.data_dir,
@@ -345,7 +355,7 @@ class Trainer():
             metrics_results[metric_name] = value
 
         # Calculate mIoU 
-        thresholds = [0.1, 0.3, 0.5, 0.7, 0.9]
+        thresholds = np.arange(0.5, 1.05, 0.05)
         metrics_results["miou"] = 0
         for threshold in thresholds:
             results_thresh = binary_metrics.calculate_metrics(all_outputs, all_targets, threshold=threshold)
@@ -593,7 +603,7 @@ class Trainer():
 
         binary_metrics = BinaryMetrics()  # Initialize your metrics class
 
-        for threshold in np.arange(0, 1.05, 0.05):
+        for threshold in np.arange(0.5, 1.05, 0.05):
             results = binary_metrics.calculate_metrics(all_outputs, all_targets, threshold=threshold)
             temp_iou = results["IoU"] # Access IoU from your class
 

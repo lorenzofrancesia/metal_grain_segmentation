@@ -18,25 +18,31 @@ def get_args_train():
     parser = argparse.ArgumentParser(description='Train a U-Net model')
     
     # Model parameters 
+    parser.add_argument_group(title="Model Parameters", description="Settings related to the model architecture")
     parser.add_argument('--model', type=str, default='Unet', help='Model to train')
     parser.add_argument('--attention', type=str, default='None', help='Attention type')
     parser.add_argument('--batchnorm', type=str, default='True', help='Batchnorm')
     
     # Encoder parameters
+    parser.add_argument_group(title="Encoder Parameters", description="Settings for the encoder part of the model")
     parser.add_argument('--encoder', type=str, default='resnet152', help='Model to train.')
     parser.add_argument('--pretrained_weights', default=None, action="store_true", help="Utilize pretrained weights.")
+    parser.add_argument('--freeze_backbone', default=None, action="store_true", help="Freezes encoder weights.")
     
     # Optimizer parameters
+    parser.add_argument_group(title="Optimizer Parameters", description="Settings for the optimizer")
     parser.add_argument('--optimizer', type=str, default='Adam', help='Optimizer.')
     parser.add_argument('--lr', type=float, default=0.0001, help='Learning rate for optimizer.')
     parser.add_argument('--momentum', type=float, default=0.9, help='Momentum for optimizer if supported.')
     parser.add_argument('--weight_decay', type=float, default=0, help='Weight decay for optimizer if supported.')
     
     # Warmup parameters
+    parser.add_argument_group(title="Warmup Parameters", description="Settings for learning rate warmup")
     parser.add_argument('--warmup_scheduler', type=str, default=None, help='Warmup scheduler.')
     parser.add_argument('--warmup_steps', type=int, default=3, help='Warmup steps for LinearLR.')
 
     # Scheduler parameters
+    parser.add_argument_group(title="Scheduler Parameters", description="Settings for learning rate scheduling")
     parser.add_argument('--scheduler', type=str, default=None, help='Scheduler.')
     parser.add_argument('--start_factor', type=float, default=0.03, help='Start factor for LinearLR.')
     parser.add_argument('--end_factor', type=float, default=1.0, help='End factor for LinearLR.')
@@ -47,6 +53,7 @@ def get_args_train():
     parser.add_argument('--gamma_lr', type=float, default=0.5, help='Gamma for StepLR.')
 
     # Loss function parameters
+    parser.add_argument_group(title="Loss Function Parameters", description="Settings for the loss function(s)")
     parser.add_argument('--loss_function', type=str, default='FocalTversky', help='Loss Function.')
     parser.add_argument('--alpha', type=float, default=0.7, help='Alpha for FocalTversky and Tversky.')
     parser.add_argument('--beta', type=float, default=0.3, help='Beta for FocalTversky and Tversky.')
@@ -62,14 +69,17 @@ def get_args_train():
     parser.add_argument('--loss_function2_weight', type=float, default=0.5, help='Weight of loss Function 2 for combo loss.')
     
     # Directories
+    parser.add_argument_group(title="Directory Settings", description="Paths to data and output directories")
     parser.add_argument('--data_dir', type=str, default='../data', help='Directory containing the dataset.')
     parser.add_argument('--output_dir', type=str, default='../runs', help='Directory to save model checkpoints.')
     
     # training parameters
+    parser.add_argument_group(title="Training Parameters", description="Settings for the training process")
     parser.add_argument('--epochs', type=int, default=10, help='Number of epochs to train for.')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size for training.')
     
     # Dataset parameters 
+    parser.add_argument_group(title="Dataset Parameters", description="Settings related to data loading and preprocessing")
     parser.add_argument("--normalize", default=False, action="store_true", help="Activate normalization.")
     parser.add_argument("--negative", default=False, action="store_true", help="Images are inverted.")
     parser.add_argument('--transform', type=str, default='transforms.ToTensor', help='Transform to apply to the dataset.')
@@ -80,9 +90,16 @@ def get_args_train():
 
     return parser.parse_args()
 
+def freeze_encoder(model):
+    for child in model.encoder.children():
+        for param in child.parameters():
+            param.requires_grad = False
+    return
+
 def get_model(args, aux_params=None):
 
     weights = "imagenet" if bool(args.pretrained_weights) else None
+    freeze = bool(args.freeze_backbone)
     attention = None if args.attention == "None" else args.attention
     batchnorm = args.batchnorm
 
@@ -163,6 +180,9 @@ def get_model(args, aux_params=None):
         
         else:
             raise ValueError('Model type not recognized')
+
+        if freeze:
+            freeze_encoder(model)
 
         return model
     
@@ -316,7 +336,8 @@ def get_args_test():
     
     # Encoder parameters
     parser.add_argument('--encoder', type=str, default='resnet152', help='Model to train.')
-    parser.add_argument('--weights', default=None, action="store_true", help="Utilize pretrained weights.")
+    parser.add_argument('--pretrained_weights', default=None, action="store_true", help="Utilize pretrained weights.")
+    parser.add_argument('--freeze_backbone', default=None, action="store_true", help="Freezes encoder weights.")
     
     # Loss function parameters
     parser.add_argument('--loss_function', type=str, default='FocalTversky', help='Loss Function.')
@@ -329,9 +350,9 @@ def get_args_test():
     parser.add_argument('--loss_function2', type=str, default='FocalTversky', help='Loss Function 2 for combo loss.')
     parser.add_argument('--loss_function2_weight', type=float, default=0.5, help='Weight of loss Function 2 for combo loss.')
     
-    parser.add_argument('--test_data_dir', type=str, help='Directory containing the dataset')
-    parser.add_argument('--test_batch_size', type=int, default=8, help='Batch size for testing')
-    parser.add_argument("--test_normalize", default=False, action="store_true", help="Activate normalization")
+    parser.add_argument('--data_dir', type=str, help='Directory containing the dataset')
+    parser.add_argument('--batch_size', type=int, default=8, help='Batch size for testing')
+    parser.add_argument("--normalize", default=False, action="store_true", help="Activate normalization")
     parser.add_argument('--transform', type=str, default='transforms.ToTensor', help='Transform to apply to the dataset.')
     
     return parser.parse_args()
