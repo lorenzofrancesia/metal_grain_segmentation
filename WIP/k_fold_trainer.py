@@ -23,7 +23,7 @@ from data.dataset import SegmentationDataset
 from utils.metrics import BinaryMetrics
 from utils.trainer import Trainer
 
-class KfoldTrainer(Trainer):
+class KFoldTrainer(Trainer):
     
     def __init__(self, *args, k_folds=5, **kwargs):
         super.__init__(*args, **kwargs)
@@ -31,17 +31,24 @@ class KfoldTrainer(Trainer):
         self.all_fold_results = []
         self.current_fold = 0
         
-    def _get_kfold_dataloaders(self, fold, train_indices, val_indices):
+    def _get_kfold_dataloaders(self, train_indices, val_indices):
         
         train_sampler = SubsetRandomSampler(train_indices)
         val_sampler = SubsetRandomSampler(val_indices)
         
-        train_dataset = SegmentationDataset(
-            image_dir=os.path.join(self.data_dir, "train/images"),
-            mask_dir=os.path.join(self.data_dir, "train/masks"), 
-            image_transform=self.train_transform,
-            mask_transform=self.train_transform,
-            normalize=self.normalize,
-            negative=self.negative,
-            verbose=False
-        )
+        train_dataset = self.dataset  # Use the combined dataset
+        val_dataset = self.dataset    # Use the combined dataset
+
+        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, sampler=train_sampler)
+        val_loader = DataLoader(val_dataset, batch_size=self.batch_size, sampler=val_sampler)
+
+        if self.save_output:
+            self.image_evolution_idx = np.random.randint(0, len(val_indices)-1)
+
+        return train_loader, val_loader
+    
+    def train(self):
+        
+        kf = KFold(n_splits=self.k_folds, shuffle=True)
+        
+        

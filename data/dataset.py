@@ -19,12 +19,20 @@ class SegmentationDataset(Dataset):
         mask_transform (callable, optional): A function/transform to apply to the masks. Default is transforms.ToTensor().
         normalize (bool, optional): Whether to normalize the images. Default is False.
     """
-    def __init__(self, image_dir, mask_dir, image_transform=transforms.ToTensor(), mask_transform=transforms.ToTensor(), normalize=False, verbose=False, mean=None, std=None, negative=False):
+    def __init__(self, 
+                 image_dir, 
+                 mask_dir, 
+                 image_transform=transforms.ToTensor(), 
+                 mask_transform=transforms.ToTensor(),
+                 normalize=False, 
+                 verbose=False, 
+                 mean=None, 
+                 std=None, 
+                 negative=False, 
+                 threshold=0.5):
         
         self.image_dir = image_dir
         self.mask_dir = mask_dir
-        self.image_paths = sorted(os.listdir(image_dir))
-        self.mask_paths = sorted(os.listdir(mask_dir))
         self.image_transform = image_transform
         self.mask_transform = mask_transform
         self.mean = mean
@@ -32,6 +40,17 @@ class SegmentationDataset(Dataset):
         self.normalize = normalize
         self.negative = negative
         self.verbose = verbose
+        self.threshold = threshold
+        
+        self.image_paths = [f for f in os.listdir(image_dir) if os.path.isfile(os.path.join(image_dir, f)) and f.endswith(('.png', '.jpg', '.jpeg', '.bmp'))]
+        self.mask_paths = [f for f in os.listdir(mask_dir) if os.path.isfile(os.path.join(mask_dir, f)) and f.endswith(('.png', '.jpg', '.jpeg', '.bmp'))]
+        self.image_paths.sort()
+        self.mask_paths.sort()
+        
+        if len(self.images) == 0 or len(self.masks) == 0:
+            raise ValueError("No images or masks found.")
+        if len(self.images) != len(self.masks):
+            raise ValueError(f"Mismatch in number of images ({len(self.images)}) and masks ({len(self.masks)}).")
         
         if self.verbose:
             self._dataset_statistics()
@@ -144,20 +163,3 @@ class SegmentationDataset(Dataset):
         
         if self.verbose:
             print(f"Calculated Mean: {self.mean}, Std: {self.std}")
-        
-
-    
-class SegmentationTransform:
-    def __init__(self, resize=(128,128)):
-        self.resize = transforms.Resize(resize)
-        self.to_tensor = transforms.ToTensor()
-        
-    def __call__(self, image, mask):
-        image = self.resize(image)
-        mask = self.resize(mask)
-        
-        image = self.to_tensor(image)
-        mask = self.to_tensor(mask)
-        
-        return image, mask
-    
