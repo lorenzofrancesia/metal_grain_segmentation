@@ -11,6 +11,9 @@ import numpy as np
 from utils.trainer import Trainer  # Correct relative import
 from loss.tversky import TverskyLoss, FocalTverskyLoss  # Correct relative import
 from loss.iou import IoULoss
+from loss.dice import DiceLoss
+from loss.topoloss import TopologicalLoss
+from loss.focal import FocalLoss
 import torchvision.transforms as transforms  # Import transforms
 
 class HyperparameterOptimizer:
@@ -78,6 +81,7 @@ class HyperparameterOptimizer:
             warmup=warmup_params["warmup_steps"] if warmup_params["warmup_scheduler"] != "None" else 0, 
             train_transform=self.parse_transforms(other_params["transform"]),
             normalize=other_params["normalize"],
+            negative=other_params["negative"],
             save_output=False
         )
 
@@ -271,8 +275,12 @@ class HyperparameterOptimizer:
             return TverskyLoss(alpha=loss_params["alpha"], beta=loss_params["beta"])
         elif loss_func_name == "IoU":
             return IoULoss()
-        elif loss_func_name == "BCELoss":
-            return nn.BCELoss()
+        elif loss_func_name == "Dice":
+            return DiceLoss()
+        elif loss_func_name == "BCE":
+            return torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([loss_params["positive_weight"]]))
+        elif loss_func_name == "Topoloss":
+            return TopologicalLoss()
         elif loss_func_name == "BCEWithLogitsLoss":
             return nn.BCEWithLogitsLoss()
         elif loss_func_name == "CrossEntropyLoss":

@@ -8,6 +8,8 @@ def main():
     # 1. Define the Hyperparameter Space
     hyperparameter_space = {
         "model_params": {
+            "attention": [None],
+            "batchnorm": [False],
             "encoder_name": ["resnet18"],
             "encoder_weights": ["imagenet"],
             "in_channels": [3],
@@ -27,7 +29,11 @@ def main():
             "loss_function2_weight": [0.5],
             "alpha": [0.7],
             "beta": [0.3],
-            "gamma": [1.3333]
+            "gamma": [1.3333],
+            "topoloss_patch": [64],
+            "positive_weight": [1],
+            "alpha_focal": [0.2],
+            "gamma_focal": [0.8]
         },
         "warmup_params": {
             "warmup_scheduler": ["None"],
@@ -46,7 +52,8 @@ def main():
         "other_params": {
             "batch_size": [12],
             "epochs": [3],
-            "normalize": [True], 
+            "normalize": [True],
+            "negative": [True], 
             "transform": [
                 "['transforms.Resize((512,512))','transforms.ToTensor()']"
             ],
