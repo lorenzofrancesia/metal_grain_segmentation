@@ -6,6 +6,8 @@ from collections import defaultdict
 from sklearn.metrics import precision_recall_curve, average_precision_score
 from PIL import Image
 import numpy as np
+# import warnings
+# warnings.simplefilter(action='ignore', category=FutureWarning)
 
 import torch
 import torch.nn as nn
@@ -49,6 +51,15 @@ class Tester():
     def _initialize(self):
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
+        else:
+            counter = 1
+            while True:
+                new_dir = f"{self.output_dir}{counter}"
+                if not os.path.exists(new_dir):
+                    self.output_dir = new_dir
+                    os.makedirs(self.output_dir)
+                    break
+                counter += 1 
         
         self.model.to(self.device)
         self._load_model()  
@@ -64,7 +75,7 @@ class Tester():
             map_location = torch.device('cpu') # Map to CPU if no CUDA
             
         print("Loading model...")
-        checkpoint = torch.load(self.model_path, map_location=map_location)
+        checkpoint = torch.load(self.model_path, map_location=map_location, weights_only=True)
         print("Loading state dictionary...")
         self.model.load_state_dict(checkpoint['model_state_dict'])
         
@@ -102,7 +113,8 @@ class Tester():
         self.all_targets = []    
         
         with torch.inference_mode():
-            for batch in tqdm(self.test_loader, desc="Testing", leave=False):
+            progress_bar = tqdm(self.test_loader, desc=f'Testing', leave=False, file=sys.stdout)
+            for batch in progress_bar:
                 inputs, targets = batch
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
                 

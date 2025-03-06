@@ -14,3 +14,4 @@ torchseg==0.0.1a4
 torchsummary==1.5.1
 torchvision==0.20.1
 tqdm==4.67.1
+tensorboard
