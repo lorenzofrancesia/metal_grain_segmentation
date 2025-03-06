@@ -31,7 +31,6 @@ class LCDiceLoss(nn.Module):
         
     def forward(self, inputs, targets, smooth=1):
         
-        # Comment out if sigmoid already in model
         inputs = F.sigmoid(inputs)
 
         inputs = inputs.flatten()

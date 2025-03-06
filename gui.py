@@ -509,21 +509,21 @@ class ModeltrainingGUI:
 
         self.epochs_var = tk.StringVar(value="1")
         self.batch_size_var = tk.StringVar(value="6")
-        self.data_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\data")
-        self.output_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\runs")
+        self.data_dir_var = tk.StringVar(value="c:\\Users\\lorenzo.francesia\\Documents\\github\\data")
+        self.output_dir_var = tk.StringVar(value="c:\\Users\\lorenzo.francesia\\Documents\\github\\runs")
         self.normalize_var = tk.BooleanVar(value=False)
         self.negative_var = tk.BooleanVar(value=False)
         self.transform_var = tk.StringVar(value="")
         
         # testing variables
         self.test_model_path_var = tk.StringVar(value="")
-        self.test_data_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\data\\test")
+        self.test_data_dir_var = tk.StringVar(value="c:\\Users\\lorenzo.francesia\\Documents\\github\\data\\test")
         self.test_batch_size_var = tk.StringVar(value="6")
         self.test_normalize_var = tk.BooleanVar(value=False)
         self.test_negative_var = tk.BooleanVar(value=False)
         
         # Dataset tab index entry
-        self.dataset_dir_var = tk.StringVar(value="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\data\\val")
+        self.dataset_dir_var = tk.StringVar(value="c:\\Users\\lorenzo.francesia\\Documents\\github\\data\\val")
         self.dataset_index_var = tk.StringVar() 
         
 
