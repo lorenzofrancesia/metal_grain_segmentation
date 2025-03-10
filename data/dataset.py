@@ -47,10 +47,10 @@ class SegmentationDataset(Dataset):
         self.image_paths.sort()
         self.mask_paths.sort()
         
-        if len(self.images) == 0 or len(self.masks) == 0:
+        if len(self.image_paths) == 0 or len(self.mask_paths) == 0:
             raise ValueError("No images or masks found.")
-        if len(self.images) != len(self.masks):
-            raise ValueError(f"Mismatch in number of images ({len(self.images)}) and masks ({len(self.masks)}).")
+        if len(self.image_paths) != len(self.mask_paths):
+            raise ValueError(f"Mismatch in number of images ({len(self.image_paths)}) and masks ({len(self.mask_paths)}).")
         
         if self.verbose:
             self._dataset_statistics()
