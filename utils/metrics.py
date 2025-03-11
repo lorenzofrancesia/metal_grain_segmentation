@@ -1,6 +1,96 @@
 import torch
+import torchmetrics
+
 
 class BinaryMetrics():
+    """
+    A class to calculate various binary classification metrics using TorchMetrics.
+
+    Args:
+        eps (float, optional): A small value to avoid division by zero.  TorchMetrics
+            handles this internally, but we keep it for consistency with the original
+            class's interface. Default is 1e-5.
+        num_classes (int): Number of classes. Should be 1 for binary classification.
+
+    Attributes:
+        eps (float): A small value to avoid division by zero.
+        metrics (dict): A dictionary to store the calculated metrics.  The keys are
+            the names of the metrics, and the values are the *TorchMetrics metric objects*
+            (not the functions themselves, as in the original).
+    """
+    def __init__(self, eps=1e-5, num_classes=1):
+        self.eps = eps  # Kept for API consistency, but not directly used
+        self.metrics = {
+            "Precision": torchmetrics.classification.BinaryPrecision(),
+            "Recall": torchmetrics.classification.BinaryRecall(),
+            "F1": torchmetrics.classification.BinaryF1Score(),
+            "Accuracy": torchmetrics.classification.BinaryAccuracy(),
+            "Dice": torchmetrics.classification.BinaryF1Score(),  # Dice is equivalent to F1
+            "IoU": torchmetrics.classification.BinaryJaccardIndex(),
+            "F2": torchmetrics.classification.BinaryFBetaScore(beta=2.0)
+        }
+    
+    def _check_and_invert(self, outputs, targets):
+        """
+        Checks if the mean of the target tensor is closer to 1 than to 0.
+        If so, inverts both the predictions (after thresholding) and the targets.
+
+        Args:
+            outputs (torch.Tensor): Model predictions (probabilities or logits).
+            targets (torch.Tensor): Ground truth labels (0 or 1).
+
+        Returns:
+            tuple: (inverted_preds, inverted_targets) if inversion is needed,
+                   otherwise (preds, targets).
+        """
+        targets = targets.float() # prevent integer overflow in mean calculation.
+        if torch.mean(targets) > 0.5:
+            # Invert both predictions and targets
+            return 1 - outputs, 1 - targets
+        return outputs, targets
+    
+    def calculate_metrics(self, outputs, targets, threshold=0.5):
+        """
+        Calculates all the defined metrics.
+
+        Args:
+            outputs (torch.Tensor): Model predictions (probabilities or logits).
+            targets (torch.Tensor): Ground truth labels (0 or 1).
+            threshold (float, optional):  Threshold to convert probabilities to
+                binary predictions. Default: 0.5.
+
+        Returns:
+            dict: A dictionary where keys are metric names and values are the
+                calculated metric values (as floats).
+        """
+        outputs = outputs.squeeze(1)
+        targets = targets.squeeze(1)
+        
+        # outputs, targets = self._check_and_invert(outputs, targets)
+        
+        # Apply threshold to outputs
+        preds = (outputs >= threshold).int()
+
+        results = {}
+        for metric_name, metric_object in self.metrics.items():
+            # Use the TorchMetrics object directly
+            results[metric_name] = metric_object(preds, targets).item()
+
+        return results
+
+    def reset(self):
+        """
+        Resets the internal state of all metrics.  This is useful when you want
+        to calculate metrics over multiple batches/epochs and need to clear the
+        previous calculations.
+        """
+        for metric_object in self.metrics.values():
+            metric_object.reset()
+
+
+# ----- DEPRECATED --------
+
+class BinaryMetricsDeprecated():
     """
     A class to calculate various binary classification metrics.
 
@@ -68,7 +158,7 @@ class BinaryMetrics():
     def calculate_metrics(self, outputs, targets, threshold=0.5):  # Single threshold
         outputs = outputs.squeeze(1)
         targets = targets.squeeze(1)
-
+        
         results = {}
         for metric_name, metric_func in self.metrics.items():
             if metric_name == "F2":
@@ -76,4 +166,3 @@ class BinaryMetrics():
             else:
                 results[metric_name] = metric_func(outputs, targets, threshold=threshold).item()
         return results
- 
