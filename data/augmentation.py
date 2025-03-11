@@ -104,7 +104,7 @@ def crop(image, mask):
     """
     h, w = image.shape[:2]
     
-    transform = alb.RandomResizedCrop(p=1, size=(h,w))
+    transform = alb.RandomResizedCrop(p=1, size=(h,w), scale=(0.5,1))
     
     transformed = transform(image=image, mask=mask)
     transformed_image = transformed['image']
@@ -198,13 +198,13 @@ def offline_augmentation(image_dir, mask_dir, out_image_dir, out_mask_dir, angle
         mask.save(os.path.join(out_mask_dir, f"{name}{ext}"))     
                 
                 
-offline_augmentation(image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\preds",
-                     mask_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\preds",
-                     out_image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test_img",
-                     out_mask_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test_mask", 
+offline_augmentation(image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\images",
+                     mask_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\masks",
+                     out_image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\aug_img",
+                     out_mask_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\aug_mask", 
                      flip_h=True,
                      flip_v=True,
                      flip_hv=True,
                      rand_crop=True,
-                     num_crops=50
+                     num_crops=1
 )
