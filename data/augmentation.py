@@ -198,10 +198,10 @@ def offline_augmentation(image_dir, mask_dir, out_image_dir, out_mask_dir, angle
         mask.save(os.path.join(out_mask_dir, f"{name}{ext}"))     
                 
                 
-offline_augmentation(image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\images",
-                     mask_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\masks",
-                     out_image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\aug_img",
-                     out_mask_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\aug_mask", 
+offline_augmentation(image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\train\\images",
+                     mask_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\train\\masks",
+                     out_image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\train\\images",
+                     out_mask_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\train\\masks", 
                      flip_h=True,
                      flip_v=True,
                      flip_hv=True,

@@ -91,40 +91,148 @@ class HyperparameterOptimizer:
         # Get the validation loss
         val_loss = trainer.last_loss
         
-         # --- CORRECT, SIMPLE SOLUTION ---
-        if not np.isfinite(val_loss):  # Use numpy.isfinite() for a robust check
-            print(f"[WARNING] Trial {trial.number} resulted in infinite or NaN loss.  Skipping.")
-            raise optuna.TrialPruned()  # Signal Optuna to prune (stop) this trial
+        # Store all relevant metrics for this trial
+        trial.set_user_attr("model_params", model_params)
+        trial.set_user_attr("optimizer_params", optimizer_params)
+        trial.set_user_attr("loss_params", loss_params)
+        trial.set_user_attr("warmup_params", warmup_params)
+        trial.set_user_attr("scheduler_params", scheduler_params)
+        trial.set_user_attr("other_params", other_params)
         
+        # Store training metrics if available
+        if hasattr(trainer, "train_losses"):
+            trial.set_user_attr("train_losses", trainer.train_losses)
+        if hasattr(trainer, "val_losses"):
+            trial.set_user_attr("val_losses", trainer.val_losses)
+        
+        # Log additional metrics if available from trainer
+        if hasattr(trainer, "metrics"):
+            for metric_name, metric_value in trainer.metrics.items():
+                trial.set_user_attr(f"metric_{metric_name}", metric_value)
+        
+        if not np.isfinite(val_loss):
+            print(f"[WARNING] Trial {trial.number} resulted in infinite or NaN loss. Skipping.")
+            del trainer, model, optimizer, lr_scheduler, loss_function  # Clean up before pruning
+            torch.cuda.empty_cache()
+            raise optuna.TrialPruned()
+
         del trainer, model, optimizer, lr_scheduler, loss_function
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        return val_loss
+        self._save_trial_results(trial)
+        return val_loss  # Return the loss *before* saving
+
 
     def optimize(self, n_trials=100):
-
+        """Run the optimization process with enhanced logging."""
         self.study.optimize(self._objective, n_trials=n_trials)
-         # --- CHANGE STARTS HERE ---
+        
         # Print additional information if all trials were pruned.
         if len(self.study.trials) == 0:
             print("All trials were pruned due to infinite loss. Check your setup.")
         elif all(trial.state == optuna.trial.TrialState.PRUNED for trial in self.study.trials):
-            print("All trials were pruned. Consider adjusting your hyperparameter search space or checking for issues like exploding gradients or incorrect loss function configuration.")
+            print("All trials were pruned. Consider adjusting your hyperparameter search space or checking for issues.")
         else:
-            #The rest of your print statements
             print(f"Optimization complete.")
             print(f"Best trial: {self.study.best_trial.number}")
             print(f"Best hyperparameters: {self.study.best_params}")
             print(f"Best loss: {self.study.best_value}")
+            
+            # Print parameter importance if available
+            try:
+                importance = optuna.importance.get_param_importances(self.study)
+                print("\nParameter importance:")
+                for param, score in importance.items():
+                    print(f"  {param}: {score:.4f}")
+            except:
+                pass
 
         self._save_results()
+        
+        return self.study.best_trial
 
+    def _save_trial_results(self, trial):
+        """Save detailed information about each completed trial."""
+        trial_dir = os.path.join(self.output_dir, f"trial_{trial.number}")
+        os.makedirs(trial_dir, exist_ok=True)
+        
+        # Save trial parameters and results
+        trial_data = {
+            "number": trial.number,
+            "params": trial.params,
+        }
+        
+        # Add user attributes (metrics, parameter groups, etc.)
+        for key, value in trial.user_attrs.items():
+            if isinstance(value, (list, dict, np.ndarray)):
+                # For complex data types like training history
+                if key == "train_losses" or key == "val_losses":
+                    # Save training curves separately as CSV for easy plotting
+                    if isinstance(value, list):
+                        import pandas as pd
+                        df = pd.DataFrame({key: value})
+                        df.to_csv(os.path.join(trial_dir, f"{key}.csv"), index_label="epoch")
+                        trial_data[key] = f"Saved to {key}.csv"
+                    else:
+                        trial_data[key] = value
+            else:
+                trial_data[key] = value
+        
+        # Save as YAML
+        with open(os.path.join(trial_dir, "trial_details.yml"), "w") as f:
+            yaml.dump(trial_data, f, default_flow_style=False)
+            
     def _save_results(self):
+        """Enhanced version to save comprehensive results of the optimization."""
+        # Save best parameters as before
         best_params = self.study.best_params
         with open(os.path.join(self.output_dir, "best_hyperparameters.yml"), "w") as outfile:
             yaml.dump(best_params, outfile, default_flow_style=False)
+        
+        # Save overall study summary
+        study_info = {
+            "study_name": self.study.study_name,
+            "direction": self.study.direction,
+            "best_trial": self.study.best_trial.number,
+            "best_value": self.study.best_value,
+            "n_trials": len(self.study.trials),
+            "n_completed": len([t for t in self.study.trials if t.state == optuna.trial.TrialState.COMPLETE]),
+            "n_pruned": len([t for t in self.study.trials if t.state == optuna.trial.TrialState.PRUNED]),
+        }
+        
+        with open(os.path.join(self.output_dir, "study_summary.yml"), "w") as outfile:
+            yaml.dump(study_info, outfile, default_flow_style=False)
+        
+        # Generate importance plot
+        try:
+            import matplotlib.pyplot as plt
+            from optuna.visualization import plot_param_importances
             
+            fig = plot_param_importances(self.study)
+            fig.write_image(os.path.join(self.output_dir, "parameter_importance.png"))
+            
+            # Create a CSV with all trials information for easy analysis
+            import pandas as pd
+            trials_df = self.study.trials_dataframe()
+            trials_df.to_csv(os.path.join(self.output_dir, "all_trials.csv"))
+            
+            # Generate correlation plots
+            from optuna.visualization import plot_contour
+            for param1 in self.study.best_params:
+                for param2 in self.study.best_params:
+                    if param1 != param2:
+                        try:
+                            fig = plot_contour(self.study, params=[param1, param2])
+                            fig.write_image(os.path.join(self.output_dir, f"contour_{param1}_vs_{param2}.png"))
+                        except:
+                            # Some parameter combinations might not work for visualization
+                            pass
+        except ImportError:
+            print("Could not generate visualization plots. Make sure matplotlib and plotly are installed.")
+        except Exception as e:
+            print(f"Error generating visualization: {e}")
+                
     def get_model_params(self, trial):
         model_params = {}
         for param, values in self.hyperparameter_space.get("model_params", {}).items():

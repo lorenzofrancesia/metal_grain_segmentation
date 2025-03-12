@@ -8,21 +8,22 @@ def main():
     # 1. Define the Hyperparameter Space
     hyperparameter_space = {
         "model_params": {
-            "attention": [None],
-            "batchnorm": [False],
-            "encoder_name": ["resnet18"],
-            "encoder_weights": ["imagenet"],
+            "attention": [None, "scse"],
+            "batchnorm": [False, True],
+            "encoder_name": ["resnet18", "resnet50", "resnet100", "resnet200", "lambda_resnet50ts",
+                             'regnetv_064', 'regnetx_064', "resnest200e", "efficientnet_b8", "effcientnetv2_xl" ],
+            "encoder_weights": [None, "imagenet"],
             "in_channels": [3],
             "classes": [1],
         },
         "optimizer_params": {
-            "optimizer": ["AdamW"],
+            "optimizer": ["AdamW", "Adam", "SGD"],
             "lr": {"low": 1e-5, "high": 1e-1, "log": True},
             "momentum": {"low": 0.2, "high": 0.99, "log": False},
-            "weight_decay": [1e-2]
+            "weight_decay": {"low": 1e-5, "high": 1e-2, "log": False}
         },
         "loss_params": {
-            "loss_function": ["Tversky"],
+            "loss_function": ["Focal"],
             "loss_function1": ["Tversky"],
             "loss_function2": ["Tversky"],
             "loss_function1_weight": [0.5],
@@ -32,27 +33,27 @@ def main():
             "gamma": [1.3333],
             "topoloss_patch": [64],
             "positive_weight": [1],
-            "alpha_focal": [0.2],
-            "gamma_focal": [0.8]
+            "alpha_focal": {"low": 0.01, "high": 0.99, "log": False},
+            "gamma_focal": {"low": 0.01, "high": 0.99, "log": False}
         },
         "warmup_params": {
-            "warmup_scheduler": ["None"],
-            "warmup_steps": [0]
+            "warmup_scheduler": ["None", "Linear"],
+            "warmup_steps": {"low": 1, "high": 10, "log": False}
         },
         "scheduler_params": {
-            "scheduler": ["LinearLR"],
+            "scheduler": ["StepLR"],
             "start_factor": [1.0],
             "end_factor": [0.3],
             "iterations": [10],
             "t_max": [10],
             "eta_min": [0],
-            "step_size": [5],
-            "gamma_lr": [0.5],
+            "step_size": {"low": 5, "high": 20, "log": False},
+            "gamma_lr": {"low": 0.05, "high": 0.95, "log": False},
         },
         "other_params": {
-            "batch_size": [12],
-            "epochs": [3],
-            "normalize": [True],
+            "batch_size": [6, 12, 14, 48],
+            "epochs": [20],
+            "normalize": [True, False],
             "negative": [True], 
             "transform": [
                 "['transforms.Resize((512,512))','transforms.ToTensor()']"
@@ -61,8 +62,8 @@ def main():
     }
 
     # 2. Define the Data Directory and Output Directory
-    data_dir = "C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\data"  # Replace with your data directory
-    output_dir = "C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\optim"  # Replace with your desired output directory
+    data_dir = "C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\github\\data"  # Replace with your data directory
+    output_dir = "C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\github\\runs"  # Replace with your desired output directory
 
     # 3. Get the Model Class
     model_class = smp.Unet
@@ -72,7 +73,7 @@ def main():
         data_dir=data_dir,
         model_class=model_class,
         hyperparameter_space=hyperparameter_space,
-        study_name="test4",  # Choose a study name
+        study_name="test_focal",  # Choose a study name
         output_dir=output_dir,
     )
 
