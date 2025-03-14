@@ -290,7 +290,7 @@ def get_loss_function(args):
     elif args.loss_function == "Topoloss":
         return TopologicalLoss()
     elif args.loss_function == "BCE":
-        return torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([args.positive_weight]))
+        return torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([args.positive_weight])).to("cuda" if torch.cuda.is_available() else "cpu")
     elif args.loss_function == "Focal":
         return FocalLoss(alpha=args.alpha_focal, gamma=args.gamma_focal)
     elif args.loss_function == "Combo":

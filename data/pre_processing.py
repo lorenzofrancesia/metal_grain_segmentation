@@ -93,6 +93,6 @@ def process_image_pairs(directory, output_dir,train_ratio=0.7, val_ratio=0.2, te
 if __name__ == '__main__':
 
     input_dir = r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Desktop\align_test\results"
-    output_dir = r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Desktop\test"
+    output_dir = r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Desktop\electrical_steel_dataset"
     
     process_image_pairs(input_dir, output_dir, train_ratio=0.8, val_ratio=0.1, test_ratio=0.1)
