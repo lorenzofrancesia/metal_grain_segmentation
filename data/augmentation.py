@@ -20,7 +20,7 @@ def rotate(image, mask, angle, exact_angle):
     if exact_angle:
         angle = (angle, angle)
         
-    transform = alb.Rotate(limit=angle, p=1)
+    transform = alb.Rotate(limit=angle, p=1, crop_border=True)
     
     transformed = transform(image=image, mask=mask)
     transformed_image = transformed['image']
@@ -114,7 +114,12 @@ def crop(image, mask):
 
 
 
-def offline_augmentation(image_dir, mask_dir, out_image_dir, out_mask_dir, angles=None, exact_angle=False, flip_h=False, flip_v=False, flip_hv=False, rand_crop=False, num_crops=1):
+def offline_augmentation(image_dir, mask_dir, out_image_dir=None, out_mask_dir=None, angles=None, exact_angle=True, flip_h=False, flip_v=False, flip_hv=False, rand_crop=False, num_crops=1):
+    
+    if out_image_dir is None:
+        out_image_dir = image_dir
+    if out_mask_dir is None:
+        out_mask_dir = mask_dir
     
     image_paths = [f for f in os.listdir(image_dir) if os.path.isfile(os.path.join(image_dir, f)) and f.endswith(('.png', '.jpg', '.jpeg', '.bmp'))]
     mask_paths = [f for f in os.listdir(mask_dir) if os.path.isfile(os.path.join(mask_dir, f)) and f.endswith(('.png', '.jpg', '.jpeg', '.bmp'))]
@@ -198,13 +203,12 @@ def offline_augmentation(image_dir, mask_dir, out_image_dir, out_mask_dir, angle
         mask.save(os.path.join(out_mask_dir, f"{name}{ext}"))     
                 
                 
-offline_augmentation(image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\train\\images",
-                     mask_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\train\\masks",
-                     out_image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\train\\images",
-                     out_mask_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\test\\train\\masks", 
+offline_augmentation(image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\electrical_steel_dataset\\train\\images",
+                     mask_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\electrical_steel_dataset\\train\\masks",
+                     angles=90,
                      flip_h=True,
                      flip_v=True,
-                     flip_hv=True,
+                     flip_hv=False,
                      rand_crop=True,
                      num_crops=1
 )

@@ -347,7 +347,7 @@ class Trainer():
         #         raise ValueError("All target values should be between 0 and 1.")
         
         metrics_results = defaultdict()
-        binary_metrics = BinaryMetrics()
+        binary_metrics = BinaryMetrics(device=self.device)
 
         # Calculate metrics at 0.5 threshold
         results_05 = binary_metrics.calculate_metrics(all_outputs, all_targets, threshold=0.5)
