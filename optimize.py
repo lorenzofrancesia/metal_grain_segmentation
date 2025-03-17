@@ -1,18 +1,18 @@
 import optuna
 import torch.nn as nn
 from torch import optim
-import segmentation_models_pytorch as smp
+import torchseg
 from utils.hyperparameter_optimizer import HyperparameterOptimizer 
 
 def main():
     # 1. Define the Hyperparameter Space
     hyperparameter_space = {
         "model_params": {
-            "attention": [None, "scse"],
-            "batchnorm": [False, True],
-            "encoder_name": ["resnet18", "resnet50", "resnet100", "resnet200", "lambda_resnet50ts",
-                             'regnetv_064', 'regnetx_064', "resnest200e", "efficientnet_b8", "effcientnetv2_xl" ],
-            "encoder_weights": [None, "imagenet"],
+            "decoder_attention_type": [None, "scse"],
+            "decoder_use_batchnorm": [True, False],
+            "encoder_name": ["resnet18", "resnet50", "resnet101", "resnet200", "lambda_resnet50ts",
+                             'regnetv_064', 'regnetx_064', "resnest200e"],
+            "encoder_weights": [None],
             "in_channels": [3],
             "classes": [1],
         },
@@ -38,7 +38,7 @@ def main():
         },
         "warmup_params": {
             "warmup_scheduler": ["None", "Linear"],
-            "warmup_steps": {"low": 1, "high": 10, "log": False}
+            "warmup_steps": [1, 2, 3, 4, 5],
         },
         "scheduler_params": {
             "scheduler": ["StepLR"],
@@ -53,7 +53,7 @@ def main():
         "other_params": {
             "batch_size": [6, 12, 14, 48],
             "epochs": [20],
-            "normalize": [True, False],
+            "normalize": [False],
             "negative": [True], 
             "transform": [
                 "['transforms.Resize((512,512))','transforms.ToTensor()']"
@@ -62,23 +62,23 @@ def main():
     }
 
     # 2. Define the Data Directory and Output Directory
-    data_dir = "C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\github\\data"  # Replace with your data directory
-    output_dir = "C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\github\\runs"  # Replace with your desired output directory
+    data_dir = "C:\\Users\\lorenzo.francesia\\Documents\\github\\data"  # Replace with your data directory
+    output_dir = "C:\\Users\\lorenzo.francesia\\Documents\\github\\runs"  # Replace with your desired output directory
 
     # 3. Get the Model Class
-    model_class = smp.Unet
+    model_class = torchseg.Unet
 
     # 4. Create the Hyperparameter Optimizer
     optimizer = HyperparameterOptimizer(
         data_dir=data_dir,
         model_class=model_class,
         hyperparameter_space=hyperparameter_space,
-        study_name="test_focal",  # Choose a study name
+        study_name="Focal_opt_0",  # Choose a study name
         output_dir=output_dir,
     )
 
     # 5. Run the Optimization
-    optimizer.optimize(n_trials=10)  # Adjust the number of trials as needed
+    optimizer.optimize(n_trials=100)  # Adjust the number of trials as needed
 
 
 if __name__ == "__main__":

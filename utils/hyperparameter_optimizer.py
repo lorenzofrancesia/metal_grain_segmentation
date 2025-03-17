@@ -7,6 +7,7 @@ import ast
 import re  
 import yaml
 import numpy as np
+import pandas as pd
 
 from utils.trainer import Trainer  # Correct relative import
 from loss.tversky import TverskyLoss, FocalTverskyLoss  # Correct relative import
@@ -54,6 +55,7 @@ class HyperparameterOptimizer:
         other_params = self.get_other_params(trial)
 
         # Get model
+        
         model = self.model_class(**model_params)
 
         # Create optimizer
@@ -170,7 +172,7 @@ class HyperparameterOptimizer:
                 if key == "train_losses" or key == "val_losses":
                     # Save training curves separately as CSV for easy plotting
                     if isinstance(value, list):
-                        import pandas as pd
+
                         df = pd.DataFrame({key: value})
                         df.to_csv(os.path.join(trial_dir, f"{key}.csv"), index_label="epoch")
                         trial_data[key] = f"Saved to {key}.csv"
@@ -213,7 +215,6 @@ class HyperparameterOptimizer:
             fig.write_image(os.path.join(self.output_dir, "parameter_importance.png"))
             
             # Create a CSV with all trials information for easy analysis
-            import pandas as pd
             trials_df = self.study.trials_dataframe()
             trials_df.to_csv(os.path.join(self.output_dir, "all_trials.csv"))
             
@@ -381,6 +382,8 @@ class HyperparameterOptimizer:
             return FocalTverskyLoss(alpha=loss_params["alpha"], beta=loss_params["beta"], gamma=loss_params["gamma"])
         elif loss_func_name == "Tversky":
             return TverskyLoss(alpha=loss_params["alpha"], beta=loss_params["beta"])
+        elif loss_func_name == "Focal":
+            return FocalLoss(alpha=loss_params["alpha_focal"], gamma=loss_params["gamma_focal"])
         elif loss_func_name == "IoU":
             return IoULoss()
         elif loss_func_name == "Dice":

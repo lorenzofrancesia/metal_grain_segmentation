@@ -6,14 +6,13 @@ import torch.nn.functional as F
 class FocalLoss(nn.Module):
     def __init__(self,  alpha=0.8, gamma=2):
         super(FocalLoss, self).__init__()
-        self.aplha = alpha
+        self.alpha = alpha
         self.gamma = gamma
         
     def forward(self, inputs, targets, smooth=1):
         
         #comment out if your model contains a sigmoid or equivalent activation layer
-        inputs = F.sigmoid(inputs)
-        targets = targets.long()       
+        inputs = F.sigmoid(inputs)     
         
         #flatten label and prediction tensors
         inputs = inputs.view(-1)

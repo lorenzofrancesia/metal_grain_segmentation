@@ -2,7 +2,7 @@ import torch
 import torchmetrics
 
 
-class BinaryMetrics():
+class BinaryMetrics2():
     """
     A class to calculate various binary classification metrics using TorchMetrics.
 
@@ -90,7 +90,7 @@ class BinaryMetrics():
 
 # ----- DEPRECATED --------
 
-class BinaryMetricsDeprecated():
+class BinaryMetrics():
     """
     A class to calculate various binary classification metrics.
 
