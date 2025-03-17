@@ -10,18 +10,17 @@ def main():
         "model_params": {
             "decoder_attention_type": [None, "scse"],
             "decoder_use_batchnorm": [True, False],
-            "encoder_name": ["resnet18", "resnet50", "resnet101", "resnet200", "lambda_resnet50ts",
-                             'regnetv_064', 'regnetx_064', "resnest200e"],
+            "encoder_name": ["resnet34", "resnet50", "resnet101", "resnet200"],
             "encoder_weights": [None],
         },
         "optimizer_params": {
-            "optimizer": ["AdamW", "Adam", "SGD"],
-            "lr": {"low": 1e-5, "high": 1e-1, "log": True},
-            "momentum": {"low": 0.2, "high": 0.99, "log": False},
-            "weight_decay": {"low": 1e-5, "high": 1e-2, "log": False}
+            "optimizer": ["AdamW", "Adam"],
+            "lr": {"low": 1e-4, "high": 1e-3, "log": True},
+            "momentum": {"low": 0.9, "high": 0.99, "log": False},
+            "weight_decay": {"low": 1e-5, "high": 1e-3, "log": False}
         },
         "loss_params": {
-            "loss_function": ["Focal"],
+            "loss_function": ["BCE"],
             "loss_function1": ["Tversky"],
             "loss_function2": ["Tversky"],
             "loss_function1_weight": [0.5],
@@ -30,16 +29,16 @@ def main():
             "beta": [0.3],
             "gamma": [1.3333],
             "topoloss_patch": [64],
-            "positive_weight": [1],
-            "alpha_focal": {"low": 0.01, "high": 0.99, "log": False},
-            "gamma_focal": {"low": 0.01, "high": 0.99, "log": False}
+            "positive_weight": {"low": 0.1, "high": 99, "log": False},
+            "alpha_focal": [0.8], #{"low": 0.01, "high": 0.99, "log": False},
+            "gamma_focal": [0.2], # {"low": 0.01, "high": 0.99, "log": False}
         },
         "warmup_params": {
             "warmup_scheduler": ["None", "Linear"],
-            "warmup_steps": [1, 2, 3, 4, 5],
+            "warmup_steps": [1, 2, 3],
         },
         "scheduler_params": {
-            "scheduler": ["StepLR"],
+            "scheduler": ["None", "StepLR"],
             "start_factor": [1.0],
             "end_factor": [0.3],
             "iterations": [10],
@@ -49,12 +48,12 @@ def main():
             "gamma_lr": {"low": 0.05, "high": 0.95, "log": False},
         },
         "other_params": {
-            "batch_size": [6, 12, 14, 48],
+            "batch_size": [24, 48, 72],
             "epochs": [20],
-            "normalize": [False],
+            "normalize": [False, True],
             "negative": [True], 
             "transform": [
-                "['transforms.Resize((512,512))','transforms.ToTensor()']"
+                "['transforms.Resize((256,256))','transforms.ToTensor()']"
             ],
         },
     }
@@ -71,7 +70,7 @@ def main():
         data_dir=data_dir,
         model_class=model_class,
         hyperparameter_space=hyperparameter_space,
-        study_name="Focal_opt_0",  # Choose a study name
+        study_name="Focal_opt_1",  # Choose a study name
         output_dir=output_dir,
     )
 

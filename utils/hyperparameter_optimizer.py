@@ -388,7 +388,7 @@ class HyperparameterOptimizer:
         elif loss_func_name == "Dice":
             return DiceLoss()
         elif loss_func_name == "BCE":
-            return torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([loss_params["positive_weight"]]))
+            return torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([loss_params["positive_weight"]])).to("cuda" if torch.cuda.is_available() else "cpu")
         elif loss_func_name == "Topoloss":
             return TopologicalLoss()
         elif loss_func_name == "BCEWithLogitsLoss":
