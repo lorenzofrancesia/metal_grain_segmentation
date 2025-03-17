@@ -69,6 +69,8 @@ class Trainer():
         self.early_stopping_counter = 0
         
         # Output
+        self.train_losses = []
+        self.val_losses = []
         self.save_output = save_output
         self.writer = None
         if self.save_output:
@@ -256,6 +258,7 @@ class Trainer():
             loss = weight1 * loss_func1(outputs, targets) + weight2 * loss_func2(outputs, targets)
         else:
             loss = self.loss_function(outputs, targets)  
+        self.train_losses.append(loss.item())
         
         # Backward pass
         self.optimizer.zero_grad()
@@ -366,6 +369,7 @@ class Trainer():
         metrics_results["AP"] = average_precision_score(all_targets.cpu().numpy().flatten(), all_outputs.cpu().numpy().flatten())
             
         val_loss /= len(self.val_loader)
+        self.val_losses.append(val_loss)
         
         del all_outputs, all_targets # Delete aggregated tensors
         if torch.cuda.is_available():

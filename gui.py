@@ -1482,6 +1482,7 @@ class ModeltrainingGUI:
             data_dir = self.test_data_dir_var.get()
             batch_size = int(self.test_batch_size_var.get())
             normalize = self.normalize_var.get()
+            negative = self.test_negative_var.get()
             transform = self.test_transforms_widget.get_sequence()
 
 
@@ -1512,6 +1513,8 @@ class ModeltrainingGUI:
             args.extend(["--transform", str(transform)])
             if normalize:
                 args.append("--normalize")
+            if negative:
+                args.append("--negative")
 
             # self.message_queue.put(f"Starting testing with arguments: {' '.join(args)}") #debug
             # self.message_queue.put("Current Working Directory: " + os.getcwd()) #debug

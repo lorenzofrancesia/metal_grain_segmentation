@@ -13,8 +13,6 @@ def main():
             "encoder_name": ["resnet18", "resnet50", "resnet101", "resnet200", "lambda_resnet50ts",
                              'regnetv_064', 'regnetx_064', "resnest200e"],
             "encoder_weights": [None],
-            "in_channels": [3],
-            "classes": [1],
         },
         "optimizer_params": {
             "optimizer": ["AdamW", "Adam", "SGD"],

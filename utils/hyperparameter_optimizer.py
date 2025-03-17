@@ -55,7 +55,6 @@ class HyperparameterOptimizer:
         other_params = self.get_other_params(trial)
 
         # Get model
-        
         model = self.model_class(**model_params)
 
         # Create optimizer

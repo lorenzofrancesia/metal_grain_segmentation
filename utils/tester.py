@@ -15,7 +15,8 @@ from torch.utils.data import DataLoader # Unless I write my own data loader
 import torchvision.transforms as transforms
 import segmentation_models_pytorch as smp
 
-from data.dataset import SegmentationDataset, masked_image, image_for_plot
+from data.dataset import SegmentationDataset
+from data.functions import masked_image, image_for_plot
 from utils.metrics import BinaryMetrics
 
 class Tester():
@@ -28,7 +29,8 @@ class Tester():
                  test_transform=transforms.ToTensor(),
                  loss_function=nn.BCELoss(),
                  device='cuda' if torch.cuda.is_available() else 'cpu',
-                 batch_size=8
+                 batch_size=8,
+                 negative=False
                  ):
         
         self.model = model
@@ -40,6 +42,7 @@ class Tester():
         self.data_dir = data_dir
         self.test_transform = test_transform
         self.normalize = normalize
+        self.negative = negative
         self.batch_size = batch_size
         
         # Output
@@ -95,6 +98,7 @@ class Tester():
             image_transform=self.test_transform,
             mask_transform=self.test_transform,
             normalize=self.normalize,
+            negative=self.negative,
             mean=self.mean,
             std=self.std
             )

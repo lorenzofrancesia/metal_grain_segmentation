@@ -20,6 +20,7 @@ def main():
         batch_size=args.batch_size,
         loss_function=loss_function,
         normalize=args.normalize, 
+        negative=args.negative,
         test_transform = transform
     )
     

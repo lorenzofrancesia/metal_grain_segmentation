@@ -353,6 +353,7 @@ def get_args_test():
     parser.add_argument('--data_dir', type=str, help='Directory containing the dataset')
     parser.add_argument('--batch_size', type=int, default=8, help='Batch size for testing')
     parser.add_argument("--normalize", default=False, action="store_true", help="Activate normalization")
+    parser.add_argument("--negative", default=False, action="store_true", help="Invert images")
     parser.add_argument('--transform', type=str, default='transforms.ToTensor', help='Transform to apply to the dataset.')
     
     return parser.parse_args()
