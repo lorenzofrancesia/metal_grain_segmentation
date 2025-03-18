@@ -258,7 +258,6 @@ class Trainer():
             loss = weight1 * loss_func1(outputs, targets) + weight2 * loss_func2(outputs, targets)
         else:
             loss = self.loss_function(outputs, targets)  
-        self.train_losses.append(loss.item())
         
         # Backward pass
         self.optimizer.zero_grad()
@@ -396,9 +395,10 @@ class Trainer():
                 train_loss += loss
                 
             train_loss /= len(self.train_loader)
-
+            self.train_losses.append(train_loss)
 
             val_loss, self.metrics = self._validate()
+            self.last_dice = self.metrics["Dice"]
             
             if self.save_output:
                 self.writer.add_scalar("Loss/train", train_loss, epoch)

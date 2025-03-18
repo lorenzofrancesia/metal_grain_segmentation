@@ -42,7 +42,7 @@ class HyperparameterOptimizer:
         else:
             self.storage = storage
 
-        self.study = optuna.create_study(study_name=self.study_name, storage=self.storage, direction="minimize",
+        self.study = optuna.create_study(study_name=self.study_name, storage=self.storage, direction="maximize",
                                          load_if_exists=True)
 
     def _objective(self, trial):
@@ -91,6 +91,7 @@ class HyperparameterOptimizer:
 
         # Get the validation loss
         val_loss = trainer.last_loss
+        dice = trainer.last_dice
         
         # Store all relevant metrics for this trial
         trial.set_user_attr("model_params", model_params)
@@ -122,7 +123,7 @@ class HyperparameterOptimizer:
             torch.cuda.empty_cache()
 
         self._save_trial_results(trial)
-        return val_loss  # Return the loss *before* saving
+        return dice  
 
 
     def optimize(self, n_trials=100):
