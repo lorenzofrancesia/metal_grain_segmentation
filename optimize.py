@@ -75,7 +75,7 @@ def main():
     )
 
     # 5. Run the Optimization
-    optimizer.optimize(n_trials=200)  # Adjust the number of trials as needed
+    optimizer.optimize(n_trials=150) 
 
 
 if __name__ == "__main__":
