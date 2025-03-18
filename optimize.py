@@ -21,17 +21,17 @@ def main():
         },
         "loss_params": {
             "loss_function": ["BCE"],
-            "loss_function1": ["Tversky"],
-            "loss_function2": ["Tversky"],
-            "loss_function1_weight": [0.5],
-            "loss_function2_weight": [0.5],
-            "alpha": [0.7],
-            "beta": [0.3],
-            "gamma": [1.3333],
-            "topoloss_patch": [64],
+            # "loss_function1": ["Tversky"],
+            # "loss_function2": ["Tversky"],
+            # "loss_function1_weight": [0.5],
+            # "loss_function2_weight": [0.5],
+            # "alpha": [0.7],
+            # "beta": [0.3],
+            # "gamma": [1.3333],
+            # "topoloss_patch": [64],
             "positive_weight": {"low": 0.1, "high": 20, "log": False},
-            "alpha_focal": [0.8],
-            "gamma_focal": [0.2],
+            # "alpha_focal": [0.8],
+            # "gamma_focal": [0.2],
         },
         "warmup_params": {
             "warmup_scheduler": ["None", "Linear"],
@@ -39,17 +39,17 @@ def main():
         },
         "scheduler_params": {
             "scheduler": ["None", "StepLR"],
-            "start_factor": [1.0],
-            "end_factor": [0.3],
-            "iterations": [10],
-            "t_max": [10],
-            "eta_min": [0],
+            # "start_factor": [1.0],
+            # "end_factor": [0.3],
+            # "iterations": [10],
+            # "t_max": [10],
+            # "eta_min": [0],
             "step_size": {"low": 5, "high": 20, "log": False},
             "gamma_lr": {"low": 0.05, "high": 0.95, "log": False},
         },
         "other_params": {
             "batch_size": [24, 48, 72],
-            "epochs": [2],
+            "epochs": [20],
             "normalize": [False, True],
             "negative": [True], 
             "transform": [
@@ -59,8 +59,8 @@ def main():
     }
 
     # 2. Define the Data Directory and Output Directory
-    data_dir = "C:\\Users\\lorenzo.francesia\\Documents\\github\\data"  # Replace with your data directory
-    output_dir = "C:\\Users\\lorenzo.francesia\\Documents\\github\\runs"  # Replace with your desired output directory
+    data_dir = "C:\\Users\\lorenzo.francesia\\Documents\\github\\data" 
+    output_dir = "C:\\Users\\lorenzo.francesia\\Documents\\github\\runs" 
 
     # 3. Get the Model Class
     model_class = torchseg.Unet
@@ -70,14 +70,20 @@ def main():
         data_dir=data_dir,
         model_class=model_class,
         hyperparameter_space=hyperparameter_space,
-        study_name="unet_bce_dice_study_test",  # Choose a study name
+        study_name="unet_bce_dice_study",  # Choose a study name
         output_dir=output_dir,
     )
 
     # 5. Run the Optimization
-    optimizer.optimize(n_trials=10)  # Adjust the number of trials as needed
+    optimizer.optimize(n_trials=200)  # Adjust the number of trials as needed
 
 
 if __name__ == "__main__":
     main()
     
+
+
+""" 
+import optuna
+optuna.delete_study(study_name="unet_bce_dice_study_test2", storage="sqlite:///C://Users//lorenzo.francesia//Documents//github//runs//optimization_studies.db")
+"""

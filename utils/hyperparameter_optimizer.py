@@ -328,6 +328,152 @@ class HyperparameterOptimizer:
             print(f"Could not generate visualization plots. Make sure matplotlib and plotly are installed. Error: {e}")
         except Exception as e:
             print(f"Error generating visualization: {e}")
+            
+    def _create_visualization_index(self, viz_dir, top_params):
+        """Create an HTML index page for all visualizations."""
+        html_content = """<!DOCTYPE html>
+    <html>
+    <head>
+        <title>Optuna Optimization Results - {study_name}</title>
+        <style>
+            body {{ 
+                font-family: Arial, sans-serif; 
+                max-width: 1200px; 
+                margin: 0 auto; 
+                padding: 20px; 
+            }}
+            h1, h2 {{ 
+                color: #333; 
+            }}
+            .section {{ 
+                margin-bottom: 30px; 
+            }}
+            .plot-container {{ 
+                display: flex; 
+                flex-wrap: wrap; 
+                gap: 20px; 
+            }}
+            .plot-item {{ 
+                margin-bottom: 20px; 
+            }}
+            .plot-item img {{ 
+                max-width: 100%; 
+                height: auto; 
+                border: 1px solid #ddd; 
+            }}
+            .plot-item h3 {{ 
+                margin: 10px 0; 
+            }}
+            a {{ 
+                color: #0066cc; 
+                text-decoration: none; 
+            }}
+            a:hover {{ 
+                text-decoration: underline; 
+            }}
+        </style>
+    </head>
+    <body>
+        <h1>Optuna Hyperparameter Optimization Results - {study_name}</h1>
+        
+        <div class="section">
+            <h2>Overview</h2>
+            <p>Study Name: {study_name}</p>
+            <p>Best Trial: #{best_trial} (Loss: {best_value:.6f})</p>
+            <p>Total Trials: {n_trials} (Completed: {n_completed}, Pruned: {n_pruned})</p>
+        </div>
+        
+        <div class="section">
+            <h2>Key Visualizations</h2>
+            <div class="plot-container">
+                <div class="plot-item">
+                    <h3>Parameter Importance</h3>
+                    <a href="parameter_importance.html" target="_blank">
+                        <img src="parameter_importance.png" alt="Parameter Importance">
+                    </a>
+                </div>
+                <div class="plot-item">
+                    <h3>Optimization History</h3>
+                    <a href="optimization_history.html" target="_blank">
+                        <img src="optimization_history.png" alt="Optimization History">
+                    </a>
+                </div>
+                <div class="plot-item">
+                    <h3>Parallel Coordinate Plot</h3>
+                    <a href="parallel_coordinate.html" target="_blank">
+                        <img src="parallel_coordinate.png" alt="Parallel Coordinate Plot">
+                    </a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Parameter Slice Plots</h2>
+            <div class="plot-container">
+                {slice_plots}
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Parameter Contour Plots</h2>
+            <div class="plot-container">
+                {contour_plots}
+            </div>
+        </div>
+        
+        <div class="section">
+            <h2>Trial Data</h2>
+            <p>Individual trial data is stored in the trial_X directories.</p>
+            <p><a href="../all_trials.csv" target="_blank">Download all trials data (CSV)</a></p>
+        </div>
+    </body>
+    </html>
+    """
+        
+        # Generate slice plot HTML
+        slice_plots_html = ""
+        for param in top_params:
+            plot_path = f"slice_{param}.png"
+            if os.path.exists(os.path.join(viz_dir, plot_path)):
+                slice_plots_html += f"""
+                <div class="plot-item">
+                    <h3>Slice Plot: {param}</h3>
+                    <a href="slice_{param}.html" target="_blank">
+                        <img src="{plot_path}" alt="Slice Plot for {param}">
+                    </a>
+                </div>
+                """
+        
+        # Generate contour plot HTML
+        contour_plots_html = ""
+        for i, param1 in enumerate(top_params):
+            for param2 in top_params[i+1:]:
+                plot_path = f"contour_{param1}_vs_{param2}.png"
+                if os.path.exists(os.path.join(viz_dir, plot_path)):
+                    contour_plots_html += f"""
+                    <div class="plot-item">
+                        <h3>Contour Plot: {param1} vs {param2}</h3>
+                        <a href="contour_{param1}_vs_{param2}.html" target="_blank">
+                            <img src="{plot_path}" alt="Contour Plot for {param1} vs {param2}">
+                        </a>
+                    </div>
+                    """
+        
+        # Fill in the template
+        formatted_html = html_content.format(
+            study_name=self.study.study_name,
+            best_trial=self.study.best_trial.number,
+            best_value=self.study.best_value,
+            n_trials=len(self.study.trials),
+            n_completed=len([t for t in self.study.trials if t.state == optuna.trial.TrialState.COMPLETE]),
+            n_pruned=len([t for t in self.study.trials if t.state == optuna.trial.TrialState.PRUNED]),
+            slice_plots=slice_plots_html,
+            contour_plots=contour_plots_html
+        )
+        
+        # Write the HTML file
+        with open(os.path.join(viz_dir, "index.html"), "w") as f:
+            f.write(formatted_html)
                 
     def get_model_params(self, trial):
         model_params = {}
