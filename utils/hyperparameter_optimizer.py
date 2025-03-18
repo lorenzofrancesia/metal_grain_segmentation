@@ -155,8 +155,16 @@ class HyperparameterOptimizer:
         return self.study.best_trial
 
     def _save_trial_results(self, trial):
-        """Save detailed information about each completed trial."""
-        trial_dir = os.path.join(self.output_dir, f"trial_{trial.number}")
+        """Save detailed information about each completed trial in a folder named after the study."""
+        # Get the study name from the study object
+        study_name = self.study.study_name
+        
+        # Create a directory for the study if it doesn't exist
+        study_dir = os.path.join(self.output_dir, study_name)
+        os.makedirs(study_dir, exist_ok=True)
+        
+        # Create a directory for the trial inside the study directory
+        trial_dir = os.path.join(study_dir, f"trial_{trial.number}")
         os.makedirs(trial_dir, exist_ok=True)
         
         # Save trial parameters and results
@@ -172,7 +180,6 @@ class HyperparameterOptimizer:
                 if key == "train_losses" or key == "val_losses":
                     # Save training curves separately as CSV for easy plotting
                     if isinstance(value, list):
-
                         df = pd.DataFrame({key: value})
                         df.to_csv(os.path.join(trial_dir, f"{key}.csv"), index_label="epoch")
                         trial_data[key] = f"Saved to {key}.csv"
@@ -180,16 +187,26 @@ class HyperparameterOptimizer:
                         trial_data[key] = value
             else:
                 trial_data[key] = value
-        
+            
         # Save as YAML
         with open(os.path.join(trial_dir, "trial_details.yml"), "w") as f:
             yaml.dump(trial_data, f, default_flow_style=False)
             
+            
+            
+            
     def _save_results(self):
         """Enhanced version to save comprehensive results of the optimization."""
+        # Get the study name from the study object
+        study_name = self.study.study_name
+        
+        # Create a directory for the study if it doesn't exist
+        study_dir = os.path.join(self.output_dir, study_name)
+        os.makedirs(study_dir, exist_ok=True)
+        
         # Save best parameters as before
         best_params = self.study.best_params
-        with open(os.path.join(self.output_dir, "best_hyperparameters.yml"), "w") as outfile:
+        with open(os.path.join(study_dir, "best_hyperparameters.yml"), "w") as outfile:
             yaml.dump(best_params, outfile, default_flow_style=False)
         
         # Save overall study summary
@@ -203,34 +220,112 @@ class HyperparameterOptimizer:
             "n_pruned": len([t for t in self.study.trials if t.state == optuna.trial.TrialState.PRUNED]),
         }
         
-        with open(os.path.join(self.output_dir, "study_summary.yml"), "w") as outfile:
+        with open(os.path.join(study_dir, "study_summary.yml"), "w") as outfile:
             yaml.dump(study_info, outfile, default_flow_style=False)
         
-        # Generate importance plot
+        # Generate better visualizations
         try:
             import matplotlib.pyplot as plt
-            from optuna.visualization import plot_param_importances
+            from optuna.visualization import plot_param_importances, plot_optimization_history, plot_slice
+
+            # Create a directory specifically for visualizations within the study directory
+            viz_dir = os.path.join(study_dir, "visualizations")
+            os.makedirs(viz_dir, exist_ok=True)
             
+            # Parameter importance visualization with improved layout
             fig = plot_param_importances(self.study)
-            fig.write_image(os.path.join(self.output_dir, "parameter_importance.png"))
+            fig.update_layout(
+                width=900, 
+                height=600,
+                margin=dict(l=20, r=20, t=30, b=20),
+                title_text="Parameter Importance",
+                title_x=0.5,
+                font=dict(family="Arial, sans-serif", size=14)  # Fixed font specification
+            )
+            fig.write_image(os.path.join(viz_dir, "parameter_importance.png"))
+            fig.write_html(os.path.join(viz_dir, "parameter_importance.html"))
+            
+            # Optimization history plot
+            history_fig = plot_optimization_history(self.study)
+            history_fig.update_layout(
+                width=900, 
+                height=500,
+                margin=dict(l=20, r=20, t=30, b=20),
+                title_text="Optimization History",
+                title_x=0.5,
+                font=dict(family="Arial, sans-serif", size=14)  # Fixed font specification
+            )
+            history_fig.write_image(os.path.join(viz_dir, "optimization_history.png"))
+            history_fig.write_html(os.path.join(viz_dir, "optimization_history.html"))
             
             # Create a CSV with all trials information for easy analysis
             trials_df = self.study.trials_dataframe()
-            trials_df.to_csv(os.path.join(self.output_dir, "all_trials.csv"))
+            trials_df.to_csv(os.path.join(study_dir, "all_trials.csv"))
             
-            # Generate correlation plots
-            from optuna.visualization import plot_contour
-            for param1 in self.study.best_params:
-                for param2 in self.study.best_params:
-                    if param1 != param2:
-                        try:
-                            fig = plot_contour(self.study, params=[param1, param2])
-                            fig.write_image(os.path.join(self.output_dir, f"contour_{param1}_vs_{param2}.png"))
-                        except:
-                            # Some parameter combinations might not work for visualization
-                            pass
-        except ImportError:
-            print("Could not generate visualization plots. Make sure matplotlib and plotly are installed.")
+            # Generate slice plots for the most important parameters
+            # Get parameter importance
+            importance = optuna.importance.get_param_importances(self.study)
+            # Get top 5 most important parameters or all if less than 5
+            top_params = list(importance.keys())[:min(5, len(importance))]
+            
+            for param in top_params:
+                try:
+                    slice_fig = plot_slice(self.study, params=[param])
+                    slice_fig.update_layout(
+                        width=800, 
+                        height=500,
+                        margin=dict(l=20, r=20, t=40, b=20),
+                        title_text=f"Slice Plot for {param}",
+                        title_x=0.5,
+                        font=dict(family="Arial, sans-serif", size=14)  # Fixed font specification
+                    )
+                    slice_fig.write_image(os.path.join(viz_dir, f"slice_{param}.png"))
+                    slice_fig.write_html(os.path.join(viz_dir, f"slice_{param}.html"))
+                except Exception as e:
+                    print(f"Error generating slice plot for {param}: {e}")
+            
+            # Generate pairwise correlation plots for top parameters
+            from optuna.visualization import plot_contour, plot_parallel_coordinate
+            
+            # Create contour plots only for the top parameters to avoid too many plots
+            for i, param1 in enumerate(top_params):
+                for param2 in top_params[i+1:]:  # Avoid duplicates
+                    try:
+                        contour_fig = plot_contour(self.study, params=[param1, param2])
+                        contour_fig.update_layout(
+                            width=800, 
+                            height=600,
+                            margin=dict(l=20, r=20, t=40, b=20),
+                            title_text=f"Contour Plot: {param1} vs {param2}",
+                            title_x=0.5,
+                            font=dict(family="Arial, sans-serif", size=14)  # Fixed font specification
+                        )
+                        contour_fig.write_image(os.path.join(viz_dir, f"contour_{param1}_vs_{param2}.png"))
+                        contour_fig.write_html(os.path.join(viz_dir, f"contour_{param1}_vs_{param2}.html"))
+                    except Exception as e:
+                        print(f"Error generating contour plot for {param1} vs {param2}: {e}")
+            
+            # Parallel coordinate plot for top parameters
+            try:
+                parallel_fig = plot_parallel_coordinate(self.study, params=top_params)
+                parallel_fig.update_layout(
+                    width=1000, 
+                    height=600,
+                    margin=dict(l=20, r=20, t=40, b=20),
+                    title_text="Parallel Coordinate Plot for Top Parameters",
+                    title_x=0.5,
+                    font=dict(family="Arial, sans-serif", size=14)  # Fixed font specification
+                )
+                parallel_fig.write_image(os.path.join(viz_dir, "parallel_coordinate.png"))
+                parallel_fig.write_html(os.path.join(viz_dir, "parallel_coordinate.html"))
+            except Exception as e:
+                print(f"Error generating parallel coordinate plot: {e}")
+                
+            # Create a summary visualization HTML page that links to all plots
+            self._create_visualization_index(viz_dir, top_params)
+                
+        except ImportError as e:
+            print(f"Could not generate visualization plots. Make sure matplotlib and plotly are installed. Error: {e}")
         except Exception as e:
             print(f"Error generating visualization: {e}")
                 

@@ -10,7 +10,7 @@ def main():
         "model_params": {
             "decoder_attention_type": [None, "scse"],
             "decoder_use_batchnorm": [True, False],
-            "encoder_name": ["resnet34", "resnet50", "resnet101", "resnet200"],
+            "encoder_name": ["resnet50"],
             "encoder_weights": [None],
         },
         "optimizer_params": {
@@ -29,9 +29,9 @@ def main():
             "beta": [0.3],
             "gamma": [1.3333],
             "topoloss_patch": [64],
-            "positive_weight": {"low": 0.1, "high": 99, "log": False},
-            "alpha_focal": [0.8], #{"low": 0.01, "high": 0.99, "log": False},
-            "gamma_focal": [0.2], # {"low": 0.01, "high": 0.99, "log": False}
+            "positive_weight": {"low": 0.1, "high": 20, "log": False},
+            "alpha_focal": [0.8],
+            "gamma_focal": [0.2],
         },
         "warmup_params": {
             "warmup_scheduler": ["None", "Linear"],
@@ -49,11 +49,11 @@ def main():
         },
         "other_params": {
             "batch_size": [24, 48, 72],
-            "epochs": [20],
+            "epochs": [2],
             "normalize": [False, True],
             "negative": [True], 
             "transform": [
-                "['transforms.Resize((256,256))','transforms.ToTensor()']"
+                "['transforms.Resize((128,128))','transforms.ToTensor()']"
             ],
         },
     }
@@ -70,12 +70,12 @@ def main():
         data_dir=data_dir,
         model_class=model_class,
         hyperparameter_space=hyperparameter_space,
-        study_name="Focal_opt_1",  # Choose a study name
+        study_name="unet_bce_dice_study_test",  # Choose a study name
         output_dir=output_dir,
     )
 
     # 5. Run the Optimization
-    optimizer.optimize(n_trials=100)  # Adjust the number of trials as needed
+    optimizer.optimize(n_trials=10)  # Adjust the number of trials as needed
 
 
 if __name__ == "__main__":
