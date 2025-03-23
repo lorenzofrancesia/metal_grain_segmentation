@@ -11,7 +11,7 @@ def main():
             "decoder_attention_type": [None, "scse"],
             "decoder_use_batchnorm": [True, False],
             "encoder_name": ["resnet50"],
-            "encoder_weights": [None],
+            "encoder_weights": [None, 'imagenet'],
         },
         "optimizer_params": {
             "optimizer": ["AdamW", "Adam"],
@@ -20,36 +20,37 @@ def main():
             "weight_decay": {"low": 1e-5, "high": 1e-3, "log": False}
         },
         "loss_params": {
-            "loss_function": ["BCE"],
+            "loss_function": ["FocalTversky"],
             # "loss_function1": ["Tversky"],
             # "loss_function2": ["Tversky"],
             # "loss_function1_weight": [0.5],
             # "loss_function2_weight": [0.5],
-            # "alpha": [0.7],
-            # "beta": [0.3],
-            # "gamma": [1.3333],
+             "alpha": {"low": 0.1, "high": .99, "log": False},
+             "beta": {"low": 0.1, "high": 0.99, "log": False},
+             "gamma": {"low": 0.1, "high": 2, "log": False},
             # "topoloss_patch": [64],
-            "positive_weight": {"low": 0.1, "high": 20, "log": False},
+            # "positive_weight": {"low": 0.1, "high": 20, "log": False},
             # "alpha_focal": [0.8],
             # "gamma_focal": [0.2],
         },
         "warmup_params": {
-            "warmup_scheduler": ["None", "Linear"],
-            "warmup_steps": [1, 2, 3],
+            "warmup_scheduler": [None],
+            "warmup_steps": [3],
         },
         "scheduler_params": {
-            "scheduler": ["None", "StepLR"],
+            "scheduler": ["StepLR"],
             # "start_factor": [1.0],
+
             # "end_factor": [0.3],
             # "iterations": [10],
             # "t_max": [10],
             # "eta_min": [0],
             "step_size": {"low": 5, "high": 20, "log": False},
-            "gamma_lr": {"low": 0.05, "high": 0.95, "log": False},
+            "gamma_lr": {"low": 0.6, "high": 0.8, "log": False},
         },
         "other_params": {
-            "batch_size": [24, 48, 72],
-            "epochs": [20],
+            "batch_size": [72],
+            "epochs": [15],
             "normalize": [False, True],
             "negative": [True], 
             "transform": [
@@ -70,7 +71,7 @@ def main():
         data_dir=data_dir,
         model_class=model_class,
         hyperparameter_space=hyperparameter_space,
-        study_name="unet_bce_dice_study",  # Choose a study name
+        study_name="unet_focaltversky_dice_study",  # Choose a study name
         output_dir=output_dir,
     )
 

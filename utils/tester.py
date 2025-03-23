@@ -125,8 +125,6 @@ class Tester():
                 outputs = self.model(inputs)
                 outputs_probs = torch.sigmoid(outputs)
                 
-                targets = targets.long()
-                
                 if isinstance(self.loss_function, list):
                     loss_func1, loss_func2, weight1, weight2 = self.loss_function
                     loss = weight1 * loss_func1(outputs_probs, targets) + weight2 * loss_func2(outputs_probs, targets)
@@ -134,20 +132,17 @@ class Tester():
                     loss = self.loss_function(outputs_probs, targets)  
                 test_loss += loss.item()        
                 
-                # outputs_binary = (outputs_probs > 0.5).long()
                 
-                self.all_inputs.append(inputs.clone().detach())
-                self.all_outputs.append(outputs_probs.clone().detach())
-                self.all_targets.append(targets.clone().detach())
+                self.all_inputs.append(inputs.detach())
+                self.all_outputs.append(outputs_probs.detach())
+                self.all_targets.append(targets.detach())
         
         # Aggregate predicitions and targets
         all_outputs_cat = torch.cat(self.all_outputs, dim=0)
         all_targets_cat = torch.cat(self.all_targets, dim=0)
         
         metrics_results = defaultdict()
-        
-        # Use BinaryMetrics class
-        binary_metrics = BinaryMetrics()
+        binary_metrics = BinaryMetrics(device=self.device)
 
         # Calculate metrics at 0.5 threshold
         results_05 = binary_metrics.calculate_metrics(all_outputs_cat, all_targets_cat, threshold=0.5)
@@ -155,7 +150,7 @@ class Tester():
             metrics_results[metric_name] = value
 
         # Calculate mIoU
-        thresholds = [0.1, 0.3, 0.5, 0.7, 0.9]
+        thresholds = np.arange(0.5, 1.05, 0.05)
         metrics_results["miou"] = 0
         for threshold in thresholds:
             results_thresh = binary_metrics.calculate_metrics(all_outputs_cat, all_targets_cat, threshold=threshold)
@@ -163,7 +158,7 @@ class Tester():
         metrics_results["miou"] /= len(thresholds)
 
         # Calculate mAP
-        metrics_results["mAP"] = average_precision_score(all_targets_cat.numpy().flatten(), all_outputs_cat.numpy().flatten())
+        metrics_results["mAP"] = average_precision_score(all_targets_cat.cpu().numpy().flatten(), all_outputs_cat.cpu().numpy().flatten())
         
         test_loss /= len(self.test_loader)
         
@@ -184,7 +179,7 @@ class Tester():
                 
         return results
     
-    def plot_results(self, n=4):
+    def plot_results(self, n=10):
         """
         Plots input images, predicted masks, and target masks, handling batches.
         Creates a *separate* plot for each image, and rescales the *image*

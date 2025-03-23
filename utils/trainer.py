@@ -66,6 +66,7 @@ class Trainer():
         # Early stopping
         self.early_stopping = early_stopping
         self.best_loss = float("inf")
+        self.best_dice = 0
         self.early_stopping_counter = 0
         
         # Output
@@ -421,8 +422,16 @@ class Trainer():
                     self.image_evolution()
             
                 # Early stopping
+                """
                 if val_loss < self.best_loss:
                     self.best_loss = val_loss
+                    self.early_stopping_counter = 0 
+                    if self.save_output:
+                        best_path = f"{self.models_dir}/best.pth"
+                        self._save_checkpoint(best_path)
+                """
+                if self.last_dice > self.best_dice:
+                    self.best_dice = self.last_dice
                     self.early_stopping_counter = 0 
                     if self.save_output:
                         best_path = f"{self.models_dir}/best.pth"
