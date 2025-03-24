@@ -236,7 +236,24 @@ class Trainer():
             self.image_evolution_idx = np.random.randint(0, len(self.val_dataset)-1)
 
     def _save_checkpoint(self, checkpoint_path):
+        model_config = False
         if self.save_output:
+            if not model_config:
+                config_data = {
+                    "model": self.config.model,
+                    "encoder_name": self.config.encoder,
+                    "encoder_weights": self.config.pretrained_weights,
+                    "decoder_attention_type": self.config.attention,
+                    "decoder_use_batchnorm": self.config.batchnorm,  
+                }
+                try:
+                    with open(os.path.join(os.path.dirname(checkpoint_path), "model_config.yaml"), "w") as f:
+                        yaml.dump(config_data, f, indent=2, sort_keys=False) 
+                    print(f"YAML model configuration file created successfully")
+                except Exception as e:
+                    print(f"Error creating YAML model configuration file: {e}") 
+                model_config = True
+            
             checkpoint = {
                 'model_state_dict': self.model.state_dict(),
                 'dataset_mean': self.train_dataset.mean,
