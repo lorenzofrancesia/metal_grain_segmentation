@@ -79,6 +79,7 @@ class Trainer():
             self._initialize_output_folder()
             
             self.config = config
+            self.model_config = False
             self._save_config()
         
             self._initialize_csv()
@@ -236,9 +237,8 @@ class Trainer():
             self.image_evolution_idx = np.random.randint(0, len(self.val_dataset)-1)
 
     def _save_checkpoint(self, checkpoint_path):
-        model_config = False
         if self.save_output:
-            if not model_config:
+            if not self.model_config:
                 config_data = {
                     "model": self.config.model,
                     "encoder_name": self.config.encoder,
@@ -252,7 +252,7 @@ class Trainer():
                     print(f"YAML model configuration file created successfully")
                 except Exception as e:
                     print(f"Error creating YAML model configuration file: {e}") 
-                model_config = True
+                self.model_config = True
             
             checkpoint = {
                 'model_state_dict': self.model.state_dict(),
