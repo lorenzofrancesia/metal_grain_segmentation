@@ -79,6 +79,7 @@ class Trainer():
             self._initialize_output_folder()
             
             self.config = config
+            self.model_config = False
             self._save_config()
         
             self._initialize_csv()
@@ -237,6 +238,22 @@ class Trainer():
 
     def _save_checkpoint(self, checkpoint_path):
         if self.save_output:
+            if not self.model_config:
+                config_data = {
+                    "model": self.config.model,
+                    "encoder_name": self.config.encoder,
+                    "encoder_weights": self.config.pretrained_weights,
+                    "decoder_attention_type": self.config.attention,
+                    "decoder_use_batchnorm": self.config.batchnorm,  
+                }
+                try:
+                    with open(os.path.join(os.path.dirname(checkpoint_path), "model_config.yaml"), "w") as f:
+                        yaml.dump(config_data, f, indent=2, sort_keys=False) 
+                    print(f"YAML model configuration file created successfully")
+                except Exception as e:
+                    print(f"Error creating YAML model configuration file: {e}") 
+                self.model_config = True
+            
             checkpoint = {
                 'model_state_dict': self.model.state_dict(),
                 'dataset_mean': self.train_dataset.mean,
