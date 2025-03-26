@@ -296,4 +296,10 @@ def create_visualization_index(viz_dir, study, top_params):
 
 if __name__ == "__main__":
 
-    create_visualizations_for_study(study_name="unet_bce_study", storage_path="C://Users//lorenzo.francesia//Documents//github//runs//optimization_studies_test.db", output_dir="C:\\Users\\lorenzo.francesia\\Documents\\github\\runs\\unet_bce_study")
+    # create_visualizations_for_study(study_name="unet_bce_study",
+    #                                 storage_path="C://Users//lorenzo.francesia//Documents//github//runs//optimization_studies_test.db",
+    #                                 output_dir="C:\\Users\\lorenzo.francesia\\Documents\\github\\runs\\unet_bce_study")
+    
+    create_visualizations_for_study(study_name="gan_optimization_short",
+                                    storage_path="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\gandb\\optuna_gan.db",
+                                    output_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Desktop\\gandb\\viz")
