@@ -127,9 +127,9 @@ class Tester():
                 
                 if isinstance(self.loss_function, list):
                     loss_func1, loss_func2, weight1, weight2 = self.loss_function
-                    loss = weight1 * loss_func1(outputs_probs, targets) + weight2 * loss_func2(outputs_probs, targets)
+                    loss = weight1 * loss_func1(outputs, targets) + weight2 * loss_func2(outputs_probs, targets)
                 else:
-                    loss = self.loss_function(outputs_probs, targets)  
+                    loss = self.loss_function(outputs, targets)  
                 test_loss += loss.item()        
                 
                 

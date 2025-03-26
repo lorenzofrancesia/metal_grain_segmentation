@@ -56,7 +56,9 @@ class SegmentationDataset(Dataset):
             self._dataset_statistics()
         
         if self.mean is not None and self.std is not None:
-                print("Mean and std obtained from different dataset.")
+            print("Mean and std obtained from different dataset.")
+            # print(f"Mean:{self.mean}")
+            # print(f"Std:{self.std}")
         
         if self.normalize and self.mean is None and self.std is None:
             self.calculate_normalization()
