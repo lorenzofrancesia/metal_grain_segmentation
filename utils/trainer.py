@@ -40,8 +40,7 @@ class Trainer():
                  early_stopping=50,
                  verbose=True,
                  config=None,
-                 save_output=True, 
-                 val_each_epoch=True
+                 save_output=True
                  ):
         
         self.model = model
@@ -88,7 +87,6 @@ class Trainer():
             
         self.verbose = verbose
         self.debugging = False
-        self.val_each_epoch = val_each_epoch
         
         # Initialize model and optimizer
         self._initialize_training()
@@ -417,62 +415,52 @@ class Trainer():
             train_loss /= len(self.train_loader)
             self.train_losses.append(train_loss)
 
+            val_loss, self.metrics = self._validate()
+            self.last_dice = self.metrics["Dice"]
             
-            if self.val_each_epoch:
-                val = True 
-            else:
-                if epoch == self.total_epochs-1:
-                    val = True
-                else:
-                    val = False
-                    
-            if val: 
-                val_loss, self.metrics = self._validate()
-                self.last_dice = self.metrics["Dice"]
-                
+            if self.save_output:
+                self.writer.add_scalar("Loss/train", train_loss, epoch)
+                self.writer.add_scalar("LR", current_lr, epoch)
+                self.writer.add_scalar("Loss/val", val_loss, epoch)
+
+                # Log each metric individually
+                for name, result in self.metrics.items():  # Iterate through the metrics dictionary
+                    self.writer.add_scalar(f"Metrics/{name}", result, epoch)
+
+            if self.current_epoch > self.warmup_epochs - 1:
+                # Print metrics - dynamically access metric names
+                print_str = f'\nEpoch {epoch+1}/{self.total_epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f}'
+                for name, result in self.metrics.items():
+                    print_str += f' - {name.capitalize()}: {result:.4f}'  # Add each metric to the string
+                print(print_str)
+
                 if self.save_output:
-                    self.writer.add_scalar("Loss/train", train_loss, epoch)
-                    self.writer.add_scalar("LR", current_lr, epoch)
-                    self.writer.add_scalar("Loss/val", val_loss, epoch)
-
-                    # Log each metric individually
-                    for name, result in self.metrics.items():  # Iterate through the metrics dictionary
-                        self.writer.add_scalar(f"Metrics/{name}", result, epoch)
-
-                if self.current_epoch > self.warmup_epochs - 1:
-                    # Print metrics - dynamically access metric names
-                    print_str = f'\nEpoch {epoch+1}/{self.total_epochs} - Train Loss: {train_loss:.4f} - Val Loss: {val_loss:.4f}'
-                    for name, result in self.metrics.items():
-                        print_str += f' - {name.capitalize()}: {result:.4f}'  # Add each metric to the string
-                    print(print_str)
-
+                    self._log_results_to_csv(epoch + 1, train_loss, val_loss)  # Pass metrics to _log_results_to_csv
+                    self.image_evolution()
+        
+                # Early stopping
+                if val_loss < self.best_loss:
+                    self.best_loss = val_loss
+                    self.early_stopping_counter = 0 
                     if self.save_output:
-                        self._log_results_to_csv(epoch + 1, train_loss, val_loss)  # Pass metrics to _log_results_to_csv
-                        self.image_evolution()
-            
-                    # Early stopping
-                    if val_loss < self.best_loss:
-                        self.best_loss = val_loss
-                        self.early_stopping_counter = 0 
-                        if self.save_output:
-                            best_path = f"{self.models_dir}/best.pth"
-                            self._save_checkpoint(best_path)
-                            """
-                            if self.last_dice > self.best_dice:
-                                self.best_dice = self.last_dice
-                                self.early_stopping_counter = 0 
-                                if self.save_output:
-                                    best_path = f"{self.models_dir}/best.pth"
-                                    self._save_checkpoint(best_path)
-                            """
-                    else:
-                        self.early_stopping_counter += 1
-                        if self.early_stopping_counter >= self.early_stopping:
-                            print(f"Early stopping triggered at epoch {epoch+1}")
-                            break
+                        best_path = f"{self.models_dir}/best.pth"
+                        self._save_checkpoint(best_path)
+                        """
+                        if self.last_dice > self.best_dice:
+                            self.best_dice = self.last_dice
+                            self.early_stopping_counter = 0 
+                            if self.save_output:
+                                best_path = f"{self.models_dir}/best.pth"
+                                self._save_checkpoint(best_path)
+                        """
                 else:
-                    if self.debugging:
-                        print(f"[DEBUG] Epoch {epoch+1} is in warmup phase.")
+                    self.early_stopping_counter += 1
+                    if self.early_stopping_counter >= self.early_stopping:
+                        print(f"Early stopping triggered at epoch {epoch+1}")
+                        break
+            else:
+                if self.debugging:
+                    print(f"[DEBUG] Epoch {epoch+1} is in warmup phase.")
                     
             # Update lr with scheduler
             if self.lr_scheduler:

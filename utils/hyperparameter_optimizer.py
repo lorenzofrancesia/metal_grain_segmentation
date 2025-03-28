@@ -9,17 +9,221 @@ import yaml
 import numpy as np
 import pandas as pd
 import traceback
+import sys
+import tqdm
+from collections import defaultdict
+from sklearn.metrics import average_precision_score
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader # Unless I write my own data loader
+from torch import optim
+import torchvision.transforms as transforms
 
-from utils.trainer import Trainer  # Correct relative import
 from loss.tversky import TverskyLoss, FocalTverskyLoss  # Correct relative import
 from loss.iou import IoULoss
 from loss.dice import DiceLoss
 from loss.topoloss import TopologicalLoss
 from loss.focal import FocalLoss
-import torchvision.transforms as transforms  # Import transforms
+from data.dataset import SegmentationDataset
+from utils.metrics import BinaryMetrics
 
-import matplotlib.pyplot as plt
 from optuna.visualization import plot_param_importances, plot_optimization_history, plot_slice, plot_pareto_front, plot_contour, plot_parallel_coordinate
+
+
+class Trainer():
+    
+    def __init__(self, 
+                 data_dir,
+                 model,
+                 batch_size=16,
+                 normalize=False,
+                 negative=False,
+                 train_transform= transforms.ToTensor(),
+                 optimizer=optim.Adam, 
+                 loss_function=nn.BCELoss(),
+                 device='cuda' if torch.cuda.is_available() else 'cpu',
+                 lr_scheduler=None,
+                 warmup=3,
+                 epochs=10,
+                 ):
+        
+        self.model = model
+        self.optimizer = optimizer
+        self.loss_function = loss_function
+        self.device = device
+        self.lr_scheduler = lr_scheduler
+        
+        # Dataset
+        self.data_dir = data_dir
+        self.train_transform = train_transform
+        self.batch_size = batch_size
+        self.normalize = normalize
+        self.negative = negative
+
+        
+        # Training parameters 
+        self.epochs = epochs
+        self.warmup_epochs = warmup if isinstance(self.lr_scheduler, optim.lr_scheduler.SequentialLR) else 0
+        self.total_epochs = self.warmup_epochs + self.epochs
+        self.current_epoch = 0
+        
+        self.best_loss = float("inf")
+        self.best_dice = 0
+        self.early_stopping_counter = 0
+        
+        # Output
+        self.train_losses = []
+        self.val_losses = []
+            
+        # Initialize model and optimizer
+        self._initialize_training()
+
+    
+    def _initialize_training(self):
+        self.model.to(self.device) 
+    
+    def _get_dataloaders(self):
+        self.train_dataset = SegmentationDataset(
+            image_dir=os.path.join(self.data_dir, "train/images"),
+            mask_dir=os.path.join(self.data_dir, "train/masks"), 
+            image_transform=self.train_transform,
+            mask_transform=self.train_transform,
+            normalize=self.normalize,
+            negative=self.negative,
+            verbose=False
+            )
+        
+        self.val_dataset = SegmentationDataset(
+            image_dir=os.path.join(self.data_dir, "val/images"),
+            mask_dir=os.path.join(self.data_dir, "val/masks"),
+            image_transform=self.train_transform,
+            mask_transform=self.train_transform,
+            normalize=self.normalize,
+            negative=self.negative,
+            verbose=False,  
+            mean=self.train_dataset.mean,
+            std=self.train_dataset.std
+            )
+        
+        self.train_loader = DataLoader(self.train_dataset, batch_size=self.batch_size, shuffle=True)
+        self.val_loader = DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False)  
+
+    def _train_step(self, batch):
+        self.model.train()
+        inputs, targets = batch
+        inputs, targets = inputs.to(self.device), targets.to(self.device)
+    
+        # Forward pass
+        outputs = self.model(inputs)
+        
+        if isinstance(self.loss_function, list):
+            loss_func1, loss_func2, weight1, weight2 = self.loss_function
+            loss = weight1 * loss_func1(outputs, targets) + weight2 * loss_func2(outputs, targets)
+        else:
+            loss = self.loss_function(outputs, targets)  
+        
+        # Backward pass
+        self.optimizer.zero_grad()
+        loss.backward()
+        
+        # torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
+        self.optimizer.step()
+        
+         # --- MEMORY MANAGEMENT ---
+        del inputs, targets, outputs  # Explicitly delete tensors
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()  # Clear GPU cache
+        
+        return loss.item()
+    
+    def _validate(self):
+        self.model.eval()
+        val_loss = 0
+        all_outputs = []
+        all_targets = []
+
+        with torch.inference_mode():
+            for batch_idx, batch in enumerate(self.val_loader):
+                inputs, targets = batch
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
+
+                outputs = self.model(inputs)
+                outputs_probs = torch.sigmoid(outputs)
+                
+                if isinstance(self.loss_function, list):
+                    loss_func1, loss_func2, weight1, weight2 = self.loss_function
+                    loss = weight1 * loss_func1(outputs, targets) + weight2 * loss_func2(outputs, targets)
+                else:
+                    loss = self.loss_function(outputs, targets)  
+                val_loss += loss.item()
+                
+                all_outputs.append(outputs_probs.detach())                
+                all_targets.append(targets.detach())
+                
+                del inputs, targets, outputs, outputs_probs 
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+        
+        # Aggregate predicitions and targets
+        all_outputs = torch.cat(all_outputs, dim=0)
+        all_targets = torch.cat(all_targets, dim=0)
+        
+        metrics_results = defaultdict()
+        binary_metrics = BinaryMetrics(device=self.device)
+
+        # Calculate metrics at 0.5 threshold
+        results_05 = binary_metrics.calculate_metrics(all_outputs, all_targets, threshold=0.5)
+        for metric_name, value in results_05.items():
+            metrics_results[metric_name] = value
+
+        # Calculate mIoU 
+        thresholds = np.arange(0.5, 1.05, 0.05)
+        metrics_results["miou"] = 0
+        for threshold in thresholds:
+            results_thresh = binary_metrics.calculate_metrics(all_outputs, all_targets, threshold=threshold)
+            metrics_results["miou"] += results_thresh["IoU"]  # Access IoU from your class
+        metrics_results["miou"] /= len(thresholds)
+
+        # Calculate AP
+        metrics_results["AP"] = average_precision_score(all_targets.cpu().numpy().flatten(), all_outputs.cpu().numpy().flatten())
+            
+        val_loss /= len(self.val_loader)
+        self.val_losses.append(val_loss)
+        
+        del all_outputs, all_targets # Delete aggregated tensors
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        return val_loss, { **metrics_results}
+    
+    def train(self):
+        # Initialize dataloaders 
+        self._get_dataloaders()
+        
+        for epoch in range(self.current_epoch, self.total_epochs):
+            self.current_epoch = epoch
+            train_loss = 0
+            
+            current_lr = self.optimizer.param_groups[0]['lr']
+            
+            # Training 
+            progress_bar = tqdm.tqdm(self.train_loader, desc=f'Epoch {epoch+1}/{self.total_epochs}', leave=False, file=sys.stdout)
+            for batch in progress_bar:
+                loss = self._train_step(batch)
+                train_loss += loss
+                
+            train_loss /= len(self.train_loader)
+            self.train_losses.append(train_loss)
+                    
+            if epoch == self.total_epochs-1:
+                val_loss, self.metrics = self._validate()
+                    
+            # Update lr with scheduler
+            if self.lr_scheduler:
+                self.lr_scheduler.step()
+               
+        self.last_dice = self.metrics["Dice"]
+        self.last_loss = val_loss
 
 class HyperparameterOptimizer:
     def __init__(self,
@@ -103,16 +307,12 @@ class HyperparameterOptimizer:
             loss_function=loss_function,
             lr_scheduler=lr_scheduler,
             device=self.device,
-            output_dir=self.output_dir,
-            config=None,  # Pass config=None
             batch_size=other_params["batch_size"],  # Pass batch_size
             epochs=other_params["epochs"],  # Pass epochs
             warmup=warmup_params["warmup_steps"] if warmup_params["warmup_scheduler"] != "None" else 0, 
             train_transform=self.parse_transforms(other_params["transform"]),
             normalize=other_params["normalize"],
             negative=other_params["negative"],
-            save_output=False,
-            val_each_epoch=False
         )
 
         try:
