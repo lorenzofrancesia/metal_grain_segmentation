@@ -25,7 +25,7 @@ from loss.dice import DiceLoss
 from loss.topoloss import TopologicalLoss
 from loss.focal import FocalLoss
 from data.dataset import SegmentationDataset
-from utils.metrics import BinaryMetrics
+from utils.metrics import BinaryMetrics, GrainMetrics
 
 from optuna.visualization import plot_param_importances, plot_optimization_history, plot_slice, plot_pareto_front, plot_contour, plot_parallel_coordinate
 
@@ -186,9 +186,20 @@ class Trainer():
 
         # Calculate AP
         metrics_results["AP"] = average_precision_score(all_targets.cpu().numpy().flatten(), all_outputs.cpu().numpy().flatten())
+        
+        grain_calculator = GrainMetrics(device='cpu') # visualization_dir=None is implicit/default
+        pred_masks_binary = (all_outputs > 0.5).bool() # Shape (B, C, H, W) -> 1 = boundary
+        true_masks_binary = all_targets.bool()
+
+        grain_metrics_results = grain_calculator.calculate_grain_similarity(
+            pred_masks=pred_masks_binary,
+            true_masks=true_masks_binary
+        )
+        metrics_results.update(grain_metrics_results) # Add grain metrics to results
             
         val_loss /= len(self.val_loader)
         self.val_losses.append(val_loss)
+        metrics_results['val_loss'] = val_loss
         
         del all_outputs, all_targets # Delete aggregated tensors
         if torch.cuda.is_available():
@@ -314,19 +325,27 @@ class HyperparameterOptimizer:
             normalize=other_params["normalize"],
             negative=other_params["negative"],
         )
+        
+        objective_values = []
+        trainer_metrics = {} # To store the final metrics dict
 
         try:
             # Train and evaluate the model
             trainer.train()
 
-            # Get the validation loss
-            val_loss = trainer.last_loss
-            val_dice = trainer.last_dice
+            trainer_metrics = getattr(trainer, "metrics", {})
             
-            values_to_check = (val_loss, val_dice) if self.is_multi_objective else (val_loss,) if self.objective_names[0] == "val_loss" else (val_dice,)
+            values_to_check = []
+            for name in self.objective_names:
+                value = trainer_metrics.get(name) # Use .get() for safety
+                if value is None:
+                    print(f"[WARNING] Trial {trial.number}: Objective '{name}' not found in trainer metrics. Available: {list(trainer_metrics.keys())}. Pruning.")
+                    raise optuna.TrialPruned(f"Objective metric '{name}' missing")
+                objective_values.append(value)
+                values_to_check.append(value)
             
             if not all(np.isfinite(v) for v in values_to_check if v is not None):
-                print(f"[WARNING] Trial {trial.number} resulted in non-finite objective values. Loss={val_loss}, Dice={val_dice}. Pruning.")
+                print(f"[WARNING] Trial {trial.number} resulted in non-finite objective values: {objective_values}. Pruning.")
                 raise optuna.TrialPruned("Non-finite objective values")
              
         except optuna.TrialPruned as e:
@@ -351,54 +370,29 @@ class HyperparameterOptimizer:
         trial.set_user_attr("warmup_params", warmup_params)
         trial.set_user_attr("scheduler_params", scheduler_params)
         trial.set_user_attr("other_params", other_params)
-        trial.set_user_attr("final_val_loss", val_loss)
-        trial.set_user_attr("final_dice", val_dice)
+        
+        for metric_name, metric_value in trainer_metrics.items():
+            # Ensure value is JSON serializable (list/dict/str/int/float/bool/None)
+            if isinstance(metric_value, np.ndarray): metric_value = metric_value.tolist()
+            elif isinstance(metric_value, torch.Tensor): metric_value = metric_value.item()
+            # Add more checks if needed
+            trial.set_user_attr(f"metric_{metric_name}", metric_value)
     
         # Store training metrics if available
         if hasattr(trainer, "train_losses"):
             trial.set_user_attr("train_losses", trainer.train_losses)
         if hasattr(trainer, "val_losses"):
             trial.set_user_attr("val_losses", trainer.val_losses)
-            
-        # Log additional metrics if available from trainer
-        if hasattr(trainer, "metrics"):
-            for metric_name, metric_value in trainer.metrics.items():
-                trial.set_user_attr(f"metric_{metric_name}", metric_value)
 
         del trainer, model, optimizer, lr_scheduler, loss_function
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-
-        # self._save_trial_results(trial)
             
+        print(f"--- Trial {trial.number} Finished. Returning objective values: {objective_values} ---")
         if self.is_multi_objective:
-            # Ensure the order matches self.objective_names / self.objective_directions
-            # Example: if names = ("val_loss", "dice")
-            loss_idx = self.objective_names.index("val_loss") if "val_loss" in self.objective_names else -1
-            dice_idx = self.objective_names.index("dice") if "dice" in self.objective_names else -1
-            
-            returned_values = [None] * len(self.objective_names)
-            if loss_idx != -1: returned_values[loss_idx] = val_loss
-            if dice_idx != -1: returned_values[dice_idx] = val_dice
-            
-            # Check if all expected values were filled
-            if None in returned_values:
-                print(f"[ERROR] Trial {trial.number}: Could not determine all objective values to return based on objective_names {self.objective_names}. Got loss={val_loss}, dice={val_dice}. Pruning.")
-                raise optuna.TrialPruned("Objective value mapping failed.")
-             
-            return tuple(returned_values) 
+            return tuple(objective_values)
         else:
-            # Single objective
-            if self.objective_names[0] == "val_loss":
-                print(f"--- Trial {trial.number} Finished. Value (val_loss): {val_loss} ---")
-                return val_loss
-            elif self.objective_names[0] == "dice":
-                print(f"--- Trial {trial.number} Finished. Value (dice): {val_dice} ---")
-                return val_dice
-            else:
-                # Fallback or error if the single objective name is unexpected
-                print(f"[ERROR] Trial {trial.number}: Unexpected single objective name '{self.objective_names[0]}'. Returning val_loss={val_loss} by default.")
-                return val_loss
+            return objective_values[0]
 
 
     def optimize(self, n_trials=100, timeout=None, gc_after_trial=True):
@@ -433,49 +427,27 @@ class HyperparameterOptimizer:
         if self.is_multi_objective:
             pareto_trials = self.study.best_trials
             print(f"Number of Pareto optimal trials found: {len(pareto_trials)}")
-            if pareto_trials:
-                print("\nPareto Optimal Trials:")
-                for i, trial in enumerate(pareto_trials):
-                    values_str = ", ".join([f"{name}={val:.6f}" for name, val in zip(self.objective_names, trial.values)])
-                    print(f"  Trial {trial.number}: Values: ({values_str}), Params: {trial.params}")
-            else:
-                    print("No Pareto optimal trials found.")
-
-            # Parameter importance (optional, target one objective)
-            if completed_trials:
-                try:
-                    # Calculate importance based on the *first* objective by default
-                    target_idx = 0
-                    target_name = self.objective_names[target_idx]
-                    importance = optuna.importance.get_param_importances(
-                        self.study,
-                        target=lambda t: t.values[target_idx] if t.values and len(t.values) > target_idx else float('nan'),
-                    )
-                    print(f"\nParameter importance (for '{target_name}'):")
-                    for param, score in importance.items(): print(f"  {param}: {score:.4f}")
-                except Exception as e: print(f"\nCould not calculate parameter importance: {e}")
-
-            self._save_results() # Save multi-objective results
-            return pareto_trials # Return list of best trials
-
+            if pareto_trials: print("\nPareto Optimal Trials:"); [print(f"  Trial {t.number}: Values: ({', '.join([f'{n}={v:.6f}' for n, v in zip(self.objective_names, t.values)])}), Params: {t.params}") for t in pareto_trials]
+            else: print("No Pareto optimal trials found.")
+            if completed_trials: self._try_plot_importance(completed_trials)
+            self._save_results(); return pareto_trials
         else: # Single Objective
             best_trial = self.study.best_trial
-            print(f"\nBest trial found:")
-            print(f"  Number: {best_trial.number}")
-            print(f"  Value ({self.objective_names[0]}): {best_trial.value:.6f}")
-            print(f"  Params: {best_trial.params}")
+            print(f"\nBest trial found:\n  Number: {best_trial.number}\n  Value ({self.objective_names[0]}): {best_trial.value:.6f}\n  Params: {best_trial.params}")
+            if completed_trials: self._try_plot_importance(completed_trials)
+            self._save_results(); return best_trial
 
-            # Parameter importance
-            if completed_trials:
-                try:
-                    importance = optuna.importance.get_param_importances(self.study)
-                    print("\nParameter importance:")
-                    for param, score in importance.items(): print(f"  {param}: {score:.4f}")
-                except Exception as e: print(f"\nCould not calculate parameter importance: {e}")
+    def _try_plot_importance(self, completed_trials):
+        """Helper to calculate and print importance, handling potential errors."""
+        try:
+            target_idx = 0 # Base importance on the first objective by default
+            target_name = self.objective_names[target_idx]
+            importance = optuna.importance.get_param_importances(self.study, target=lambda t: t.values[target_idx] if t.values and len(t.values) > target_idx else float('nan'))
+            print(f"\nParameter importance (for '{target_name}'):")
+            for param, score in importance.items(): print(f"  {param}: {score:.4f}")
+        except Exception as e: print(f"\nCould not calculate parameter importance: {e}")
 
-            self._save_results() # Save single-objective results
-            return best_trial # Return the single best trial
-
+    
 
     def _save_trial_results(self, trial):
         """Save detailed information about each completed trial in a folder named after the study."""

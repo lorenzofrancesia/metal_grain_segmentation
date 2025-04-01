@@ -171,8 +171,8 @@ if __name__ == '__main__':
     # process_image_pairs(input_dir, output_dir, train_ratio=0.8, val_ratio=0.1, test_ratio=0.1)
     
     
-    add_training_data(image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\alignment\\align_data\\new_results",
-                      output_dir=r'C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\electrical_steel_dataset_og - Copy\train')
+    add_training_data(image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\alignment\\align_data\\new2",
+                      output_dir=r'C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\electrical_steel_dataset_plus\train')
     
     
 

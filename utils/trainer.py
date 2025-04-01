@@ -19,7 +19,7 @@ from torch.utils.tensorboard import SummaryWriter
 import segmentation_models_pytorch as smp
 
 from data.dataset import SegmentationDataset
-from utils.metrics import BinaryMetrics
+from utils.metrics import BinaryMetrics, GrainMetrics
 
 class Trainer():
     
@@ -29,6 +29,7 @@ class Trainer():
                  batch_size=16,
                  normalize=False,
                  negative=False,
+                 augment=False,
                  train_transform= transforms.ToTensor(),
                  optimizer=optim.Adam, 
                  loss_function=nn.BCELoss(),
@@ -55,6 +56,7 @@ class Trainer():
         self.batch_size = batch_size
         self.normalize = normalize
         self.negative = negative
+        self.augment = augment
 
         
         # Training parameters 
@@ -177,6 +179,7 @@ class Trainer():
                 "Dataset Parameters:" : {
                     "normalize" : self.config.normalize,
                     "negative" : self.config.negative,
+                    "augment" : self.config.augment,
                     "transform" : self.config.transform
                 },
             }
@@ -194,6 +197,8 @@ class Trainer():
                 # Get metric names from BinaryMetrics class
                 binary_metrics = BinaryMetrics()
                 metric_names = list(binary_metrics.metrics.keys())  # Get a list of the metric names
+                
+                ## ADD NEW METRICS
 
                 headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate"] + metric_names + ["mAP", "mIoU"] # Modified Header
                 writer.writerow(headers)
@@ -215,6 +220,7 @@ class Trainer():
             mask_transform=self.train_transform,
             normalize=self.normalize,
             negative=self.negative,
+            augment=self.augment,
             verbose=False
             )
         
@@ -368,6 +374,7 @@ class Trainer():
         
         metrics_results = defaultdict()
         binary_metrics = BinaryMetrics(device=self.device)
+        grain_metrics = GrainMetrics(device=self.device, visualization_dir=os.path.join(self.results_dir, "viz"), counter=self.current_epoch+1)
 
         # Calculate metrics at 0.5 threshold
         results_05 = binary_metrics.calculate_metrics(all_outputs, all_targets, threshold=0.5)
@@ -384,6 +391,15 @@ class Trainer():
 
         # Calculate AP
         metrics_results["AP"] = average_precision_score(all_targets.cpu().numpy().flatten(), all_outputs.cpu().numpy().flatten())
+        
+        binarized_outputs = (all_outputs > 0.5).bool()
+        grain_results = grain_metrics.calculate_grain_similarity(
+            binarized_outputs, 
+            all_targets,
+            visualize=True
+            )
+        for metric_name, value in grain_results.items():
+            metrics_results[metric_name] = value
             
         val_loss /= len(self.val_loader)
         self.val_losses.append(val_loss)

@@ -524,6 +524,7 @@ class ModeltrainingGUI:
         self.output_dir_var = tk.StringVar(value="c:\\Users\\lorenzo.francesia\\Documents\\github\\runs")
         self.normalize_var = tk.BooleanVar(value=False)
         self.negative_var = tk.BooleanVar(value=False)
+        self.augment_var = tk.BooleanVar(value=False)
         self.transform_var = tk.StringVar(value="")
         
         # testing variables
@@ -532,6 +533,7 @@ class ModeltrainingGUI:
         self.test_batch_size_var = tk.StringVar(value="6")
         self.test_normalize_var = tk.BooleanVar(value=False)
         self.test_negative_var = tk.BooleanVar(value=False)
+        self.test_augment_var = tk.BooleanVar(value=False)
         
         # Dataset tab index entry
         self.dataset_dir_var = tk.StringVar(value="c:\\Users\\lorenzo.francesia\\Documents\\github\\data\\val")
@@ -1011,15 +1013,18 @@ class ModeltrainingGUI:
         ctk.CTkLabel(left_frame, text="Negative").grid(row=17, column=0, sticky="e", padx=5, pady=5)
         ctk.CTkSwitch(left_frame, text="", variable=self.negative_var, onvalue=True, offvalue=False).grid(row=17, column=1, sticky="w", padx=5, pady=5)
         
+        ctk.CTkLabel(left_frame, text="Augment").grid(row=18, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkSwitch(left_frame, text="", variable=self.augment_var, onvalue=True, offvalue=False).grid(row=18, column=1, sticky="w", padx=5, pady=5)
+        
         available_transforms = ["transforms.ToTensor", "transforms.Resize"]
         self.transforms_widget = TransformWidget(left_frame, available_transforms=available_transforms, update_callback=self.update_transform_variable)
-        self.transforms_widget.grid(row=18, column=0, columnspan=3, sticky="we", padx=5, pady=5)
+        self.transforms_widget.grid(row=19, column=0, columnspan=3, sticky="we", padx=5, pady=5)
 
         train_button = ctk.CTkButton(left_frame, text="Start training", command=self.start_training, height=30)
-        train_button.grid(row=19, columnspan=3, sticky="we", padx=5, pady=5)
+        train_button.grid(row=20, columnspan=3, sticky="we", padx=5, pady=5)
         
         config_frame = ctk.CTkFrame(left_frame)
-        config_frame.grid(row=20, columnspan=3, sticky="we", padx=5, pady=5)
+        config_frame.grid(row=21, columnspan=3, sticky="we", padx=5, pady=5)
         
         save_config = ctk.CTkButton(config_frame, text="Save Configs", command=self.save_config)
         save_config.grid(row=0, column=0,  sticky="w", padx=5, pady=5)
@@ -1028,7 +1033,7 @@ class ModeltrainingGUI:
         load_config.grid(row=0, column=1,  sticky="e", padx=5, pady=5)
 
         slider = ctk.CTkSlider(left_frame, from_=0.8, to=1.6, number_of_steps=10, command=self.change_scaling_event)
-        slider.grid(row=21,columnspan=3, sticky="we", padx=5, pady=5)
+        slider.grid(row=22,columnspan=3, sticky="we", padx=5, pady=5)
   
     def create_testing_tab(self, parent):
         container_frame = ctk.CTkFrame(parent)
@@ -1122,13 +1127,13 @@ class ModeltrainingGUI:
 
         available_transforms = ["transforms.ToTensor", "transforms.Resize"]
         self.test_transforms_widget = TransformWidget(left_frame, available_transforms=available_transforms, update_callback=self.update_transform_variable)
-        self.test_transforms_widget.grid(row=10, column=0, columnspan=3, sticky="we", padx=5, pady=5)
+        self.test_transforms_widget.grid(row=11, column=0, columnspan=3, sticky="we", padx=5, pady=5)
 
         test_button = ctk.CTkButton(left_frame, text="Start testing", command=self.start_testing, height=30)
-        test_button.grid(row=11, columnspan=3, sticky="we", padx=5, pady=5)
+        test_button.grid(row=12, columnspan=3, sticky="we", padx=5, pady=5)
         
         slider = ctk.CTkSlider(left_frame, from_=0.8, to=1.6, number_of_steps=10, command=self.change_scaling_event)
-        slider.grid(row=12,columnspan=3, sticky="we", padx=5, pady=5)
+        slider.grid(row=13,columnspan=3, sticky="we", padx=5, pady=5)
     
     def create_dataset_tab(self, parent):
         container_frame = ctk.CTkFrame(parent)
@@ -1420,6 +1425,8 @@ class ModeltrainingGUI:
                                     args.append("--normalize")
                                 elif key == "negative":
                                     args.append("--negative")
+                                elif key == "augment":
+                                    args.append("--augment")
                                
                         else: # Handle all stringVars
                             args.extend([f"--{key}", str(var.get())])

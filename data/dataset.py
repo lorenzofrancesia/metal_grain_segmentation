@@ -3,10 +3,24 @@ from PIL import Image
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
+import albumentations as alb
 
 import torch
 from torch.utils.data import Dataset
 from torchvision import transforms
+
+def get_resize_dims_from_transform(transform_compose):
+    if not isinstance(transform_compose, transforms.Compose):
+        return None 
+    for t in transform_compose.transforms:
+        if isinstance(t, transforms.Resize):
+            size = t.size
+            if isinstance(size, (list, tuple)) and len(size) == 2:
+                return int(size[0]), int(size[1])
+            elif isinstance(size, int):
+                return (size, size)
+    return None 
+
 
 class SegmentationDataset(Dataset):
     """
@@ -25,6 +39,7 @@ class SegmentationDataset(Dataset):
                  image_transform=transforms.ToTensor(), 
                  mask_transform=transforms.ToTensor(),
                  normalize=False, 
+                 augment=False,
                  verbose=False, 
                  mean=None, 
                  std=None, 
@@ -41,6 +56,30 @@ class SegmentationDataset(Dataset):
         self.negative = negative
         self.verbose = verbose
         self.threshold = threshold
+        self.augment = augment
+        
+        extracted_dims = get_resize_dims_from_transform(self.image_transform)
+        if extracted_dims:
+            self.target_height, self.target_width = extracted_dims
+        else:
+            target_height, target_width = 512, 512 # Or raise an error, or make them args
+            if self.verbose:
+                print(f"Warning: Could not extract target dimensions from image_transform. Using default: H={target_height}, W={target_width}")
+        
+        self.albumentation_transform = None
+        if self.augment:
+            self.albumentation_transform = alb.Compose([
+                alb.RandomResizedCrop(p=0.2, size=(self.target_height, self.target_width), scale=(0.6, 1.0), ratio=(0.75, 1.33)),
+                alb.HorizontalFlip(p=0.2),
+                alb.VerticalFlip(p=0.2),
+                
+                alb.RandomBrightnessContrast(p=0.2, brightness_limit=0.3, contrast_limit=0.3),
+                alb.HueSaturationValue(p=0.2, hue_shift_limit=30, sat_shift_limit=30, val_shift_limit=30),
+                
+                alb.GaussianBlur(p=0.2, blur_limit=(3,7)),
+                alb.GaussNoise(p=0.2),
+                alb.CoarseDropout(p=0.05, num_holes_range=(1, 8), hole_height_range=(0.03, 0.1), hole_width_range=(0.03, 0.1))
+            ])
         
         self.image_paths = [f for f in os.listdir(image_dir) if os.path.isfile(os.path.join(image_dir, f)) and f.endswith(('.png', '.jpg', '.jpeg', '.bmp'))]
         self.mask_paths = [f for f in os.listdir(mask_dir) if os.path.isfile(os.path.join(mask_dir, f)) and f.endswith(('.png', '.jpg', '.jpeg', '.bmp'))]
@@ -75,8 +114,28 @@ class SegmentationDataset(Dataset):
         image = Image.open(img_path).convert("RGB")
         mask = Image.open(mask_path).convert("L")
         
-        image = self.image_transform(image)
-        mask = self.mask_transform(mask)
+        image_np = np.array(image)
+        mask_np = np.array(mask)
+        
+        if self.augment and self.albumentation_transform:
+            try:
+                augmented = self.albumentation_transform(image=image_np, mask=mask_np)
+                image_np = augmented['image']
+                mask_np = augmented['mask']
+            except Exception as e:
+                 print(f"Error during Albumentations augmentation for index {idx}: {img_path}. Error: {e}")
+                 
+        image = Image.fromarray(image_np) 
+        mask = Image.fromarray(mask_np)
+        
+        try:
+            image = self.image_transform(image)
+            mask = self.mask_transform(mask)
+        except Exception as e:
+            print(f"Error during torchvision transform for index {idx}: {img_path}. Error: {e}")
+            # Handle error similar to loading errors (return None, placeholder, or raise)
+            raise RuntimeError(f"Torchvision transform failed for index {idx}") from e
+        
         mask = self._convert_binary(mask)
             
         if self.normalize and self.mean is not None and self.std is not None:
@@ -165,3 +224,21 @@ class SegmentationDataset(Dataset):
         
         if self.verbose:
             print(f"Calculated Mean: {self.mean}, Std: {self.std}")
+
+
+if __name__ == "__main__":
+    
+    dataset = SegmentationDataset(
+        image_dir=r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\test_dataset\train\images",
+        mask_dir=r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\test_dataset\train\images",
+        image_transform=transforms.Compose([transforms.Resize((512, 512)), transforms.ToTensor()]),
+        normalize=False,
+        augment=True,
+        negative=True
+        )
+    
+    
+    image, mask = dataset[0]
+    
+    plt.imshow(np.array(image.permute(1,2,0)))
+    plt.show()

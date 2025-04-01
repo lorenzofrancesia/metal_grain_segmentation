@@ -36,6 +36,7 @@ def main():
                       output_dir=args.output_dir,
                       normalize=args.normalize,
                       negative=args.negative,
+                      augment=args.augment,
                       config=args
                       )
     

@@ -9,7 +9,7 @@ from collections import defaultdict
 import optuna
 
 from data.dataset import SegmentationDataset
-from utils.metrics import BinaryMetrics
+from utils.metrics import BinaryMetrics, GrainMetrics
 
 class OptunaTrainer:
     
@@ -43,8 +43,25 @@ class OptunaTrainer:
         self.early_stopping = early_stopping
         self.best_loss = float("inf")
         self.evaluation_metric = evaluation_metric
-        self.best_metric_value = 0.0 if evaluation_metric != "loss" else float("inf")
+        self.maximize_metric = evaluation_metric.lower() != "loss" # Assume non-loss metrics are maximized
+        self.best_metric_value = -float("inf") if self.maximize_metric else float("inf")
         self.early_stopping_counter = 0
+        
+        self.grain_metric_names = { 
+            "wasserstein_similarity", "ks_similarity", "histogram_similarity",
+            "percentile_similarity", "mean_similarity", "variance_similarity",
+            "moments_similarity", "grain_count_similarity", "grain_distribution_similarity",
+            "wasserstein_distance_raw" 
+        }
+        
+        if self.evaluation_metric in self.grain_metric_names:
+            # Instantiate calculator IF a grain metric is the target.
+            # Pass device='cpu' as calculations happen after moving tensors to CPU.
+            # Pass visualization_dir=None explicitly.
+            self.grain_calculator = GrainMetrics(device='cpu', visualization_dir=None)
+        else:
+            self.grain_calculator = None
+        
         
         # Set up optimizer with parameters from trial if provided
         if optimizer_params is None:
@@ -152,6 +169,23 @@ class OptunaTrainer:
         # Calculate metrics at 0.5 threshold
         results_05 = binary_metrics.calculate_metrics(all_outputs, all_targets, threshold=0.5)
         metrics_results.update(results_05)
+        
+        if self.grain_calculator is not None:
+
+            pred_masks_binary = (all_outputs > 0.5).bool() # Use boolean type
+
+            true_masks_binary = all_targets.bool()
+
+            try:
+                grain_metrics_results = self.grain_calculator.calculate_grain_similarity(
+                    pred_masks=pred_masks_binary,
+                    true_masks=true_masks_binary
+                )
+                metrics_results.update(grain_metrics_results)
+            except Exception as e:
+                 print(f"\nError calculating grain metrics: {e}")
+                 for gm_name in self.grain_metric_names:
+                     metrics_results[gm_name] = 0.0 
         
         val_loss /= len(self.val_loader)
         
