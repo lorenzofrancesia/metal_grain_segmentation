@@ -480,11 +480,11 @@ class Trainer():
                 if self.debugging:
                     print(f"[DEBUG] LR Scheduler updated LR from {old_lr:.6f} to {new_lr:.6f}")
             
-            self.writer.flush() 
-            self.writer.close()   
-            self.loss_plots()
-            self.find_best_threshold()
-            self.create_animation()
+        self.writer.flush() 
+        self.writer.close()   
+        self.loss_plots()
+        self.find_best_threshold()
+        self.create_animation()
         
         self.last_loss = val_loss
     
