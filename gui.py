@@ -15,6 +15,7 @@ import torch
 from torchvision.transforms import transforms
 from data.dataset import SegmentationDataset
 import numpy as np
+import ast
 
 import matplotlib
 matplotlib.use("TkAgg")
@@ -22,16 +23,6 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.figure import Figure
 from matplotlib.ticker import MaxNLocator, FuncFormatter
 import matplotlib.pyplot as plt
-
-class StringRedirector(object):
-    def __init__(self, text_widget):
-        self.text_widget = text_widget
-
-    def write(self, string):
-        self.text_widget.display_output(string)
-
-    def flush(self):
-        pass
 
 class TransformWidget(ctk.CTkFrame):
     def __init__(self, master, available_transforms=None, update_callback=None):
@@ -473,11 +464,13 @@ class ModeltrainingGUI:
 
         self.int_validation = (self.window.register(self.validate_int_input), '%P')
         self.num_validation = (self.window.register(self.validate_numeric_input), '%P')
+        
         self.create_gui()
         
         # Clear plots on GUI initialization
-        self.plot_panel.clear_plots()
-        self.plot_panel.show_empty_image_plot()
+        if hasattr(self, 'plot_panel'):
+            self.plot_panel.clear_plots()
+            self.plot_panel.show_empty_image_plot()
 
     def _init_variables(self):
         self.model_var = tk.StringVar(value="U-Net")
@@ -533,29 +526,42 @@ class ModeltrainingGUI:
         self.test_batch_size_var = tk.StringVar(value="6")
         self.test_normalize_var = tk.BooleanVar(value=False)
         self.test_negative_var = tk.BooleanVar(value=False)
-        self.test_augment_var = tk.BooleanVar(value=False)
         
         # Dataset tab index entry
         self.dataset_dir_var = tk.StringVar(value="c:\\Users\\lorenzo.francesia\\Documents\\github\\data\\val")
         self.dataset_index_var = tk.StringVar() 
         
 
-    def validate_numeric_input(self, new_value):
-        if not new_value:
+    def validate_numeric_input(self, P):
+        """ Allow empty string or valid float/int. """
+        if P == "":
             return True
         try:
-            float(new_value)
+            float(P)
             return True
         except ValueError:
+            # Allow '-' for negative numbers start, or '.' for decimal start
+            if P == '-' or P == '.':
+                return True
+            # Allow '-.' combination
+            if P == '-.':
+                return True
+            # Check if it's a partial scientific notation (e.g., "1e-")
+            if re.match(r"^-?\d+(\.\d*)?[eE][-+]?$", P):
+                 return True
             return False
 
-    def validate_int_input(self, new_value):
-        if not new_value:
+    def validate_int_input(self, P):
+        """ Allow empty string or valid integer. """
+        if P == "":
             return True
         try:
-            int(new_value)
+            int(P)
             return True
         except ValueError:
+             # Allow '-' for negative numbers start
+            if P == '-':
+                return True
             return False
 
     def browse_dir(self, entry):
@@ -571,14 +577,58 @@ class ModeltrainingGUI:
             entry.insert(0, file_path)
     
     def log_message(self, message):
-        if self.messages_box:
-            self.messages_box.config(state=tk.NORMAL)
-            self.messages_box.insert(tk.END, message + "\n")
-            self.messages_box.see(tk.END)
-            self.messages_box.config(state=tk.DISABLED)
-            self.messages_box.update()
-            time.sleep(0.05)  # Increased delay to 0.05 seconds in log_message
-            #self.window.update_idletasks() # no need for this here, update() is stronger
+        """ Safely appends a message to the CTkTextbox from any thread. """
+        if hasattr(self, 'messages_box') and self.messages_box.winfo_exists():
+            # Schedule the GUI update on the main thread
+            self.window.after(0, self._log_message_main_thread, message)
+
+    def _log_message_main_thread(self, message):
+        """ Internal method to append message, runs ONLY on main thread. """
+        if hasattr(self, 'messages_box') and self.messages_box.winfo_exists():
+            try:
+                current_state = self.messages_box.cget("state")
+                self.messages_box.configure(state=tk.NORMAL)
+                self.messages_box.insert(tk.END, message + "\n")
+                self.messages_box.see(tk.END)
+                self.messages_box.configure(state=current_state)
+                # No need for update() or sleep here, main loop handles it
+            except tk.TclError as e:
+                 # Handle cases where the widget might be destroyed unexpectedly
+                 print(f"Error updating message box: {e}")
+            
+    def clear_last_message(self):
+        """ Safely clears the last line from the CTkTextbox from any thread. """
+        if hasattr(self, 'messages_box') and self.messages_box.winfo_exists():
+            self.window.after(0, self._clear_last_message_main_thread)
+
+    def _clear_last_message_main_thread(self):
+        """ Internal method to clear last line, runs ONLY on main thread. """
+        if hasattr(self, 'messages_box') and self.messages_box.winfo_exists():
+            try:
+                current_state = self.messages_box.cget("state")
+                self.messages_box.configure(state=tk.NORMAL)
+
+                # Get the text content
+                content = self.messages_box.get("1.0", tk.END).strip()
+                lines = content.split("\n")
+
+                if len(lines) >= 1:
+                    # Calculate the start and end index of the last line
+                    last_line_start_index = f"{len(lines)}.0"
+                    # Delete the last line
+                    self.messages_box.delete(last_line_start_index, tk.END)
+                    # If there was more than one line, add back a newline
+                    if len(lines) > 1:
+                         prev_end_index = f"{len(lines)-1}.end"
+                         # Ensure the previous line ends correctly if it was empty
+                         if self.messages_box.get(prev_end_index) != '\n':
+                              self.messages_box.insert(prev_end_index, "\n")
+
+                self.messages_box.configure(state=current_state)
+            except tk.TclError as e:
+                print(f"Error clearing last message: {e}")
+            except Exception as e: # Catch other potential errors during deletion
+                 print(f"Unexpected error in _clear_last_message_main_thread: {e}")
 
     def save_config(self):
         """Saves the configuration dynamically."""
@@ -882,7 +932,8 @@ class ModeltrainingGUI:
         self.create_training_tab(tab_view.tab("Training"))
         self.create_dataset_tab(tab_view.tab("Dataset"))
         self.create_testing_tab(tab_view.tab("Testing"))
-               
+        
+    
     def create_training_tab(self, parent):
         container_frame = ctk.CTkFrame(parent)
         container_frame.pack(fill=tk.BOTH, expand=True)
@@ -1002,10 +1053,10 @@ class ModeltrainingGUI:
             browse_button.grid(row=i, column=2, sticky="w", padx=5, pady=5)
 
         ctk.CTkLabel(left_frame, text="Epochs").grid(row=14, column=0, sticky="e", padx=5, pady=5)
-        ctk.CTkEntry(left_frame, textvariable=self.epochs_var, validatecommand=self.int_validation).grid(row=14, column=1, sticky="w", padx=5, pady=5)
+        ctk.CTkEntry(left_frame, textvariable=self.epochs_var, validate='key', validatecommand=self.int_validation).grid(row=14, column=1, sticky="w", padx=5, pady=5)
 
         ctk.CTkLabel(left_frame, text="Batch Size").grid(row=15, column=0, sticky="e", padx=5, pady=5)
-        ctk.CTkEntry(left_frame, textvariable=self.batch_size_var, validatecommand=self.int_validation).grid(row=15, column=1, sticky="w", padx=5, pady=5)
+        ctk.CTkEntry(left_frame, textvariable=self.batch_size_var, validate='key', validatecommand=self.int_validation).grid(row=15, column=1, sticky="w", padx=5, pady=5)
 
         ctk.CTkLabel(left_frame, text="Normalize").grid(row=16, column=0, sticky="e", padx=5, pady=5)
         ctk.CTkSwitch(left_frame, text="", variable=self.normalize_var, onvalue=True, offvalue=False).grid(row=16, column=1, sticky="w", padx=5, pady=5)
@@ -1110,19 +1161,19 @@ class ModeltrainingGUI:
         
         ###############################################################################################################
         # Data dir and other
-        ctk.CTkLabel(left_frame, text="Data Dir").grid(row=6, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkLabel(left_frame, text="Data Dir").grid(row=7, column=0, sticky="e", padx=5, pady=5)
         dir_entry = ctk.CTkEntry(left_frame, textvariable=self.test_data_dir_var)
-        dir_entry.grid(row=6, column=1, sticky="w", padx=5, pady=5)
+        dir_entry.grid(row=7, column=1, sticky="w", padx=5, pady=5)
         browse_button = ctk.CTkButton(left_frame, text="...", width=30, command=lambda entry=dir_entry: self.browse_dir(entry))
-        browse_button.grid(row=6, column=2, sticky="w", padx=5, pady=5)
+        browse_button.grid(row=7, column=2, sticky="w", padx=5, pady=5)
         
-        ctk.CTkLabel(left_frame, text="Batch Size").grid(row=7, column=0, sticky="e", padx=5, pady=5)
-        ctk.CTkEntry(left_frame, textvariable=self.test_batch_size_var, validatecommand=self.validate_int_input).grid(row=7, column=1, sticky="w", padx=5, pady=5)
+        ctk.CTkLabel(left_frame, text="Batch Size").grid(row=8, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkEntry(left_frame, textvariable=self.test_batch_size_var, validate='key', validatecommand=self.validate_int_input).grid(row=7, column=1, sticky="w", padx=5, pady=5)
         
-        ctk.CTkLabel(left_frame, text="Normalize").grid(row=8, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkLabel(left_frame, text="Normalize").grid(row=9, column=0, sticky="e", padx=5, pady=5)
         ctk.CTkSwitch(left_frame, text="", variable=self.test_normalize_var, onvalue=True, offvalue=False).grid(row=8, column=1, sticky="w", padx=5, pady=5)
         
-        ctk.CTkLabel(left_frame, text="Negative").grid(row=9, column=0, sticky="e", padx=5, pady=5)
+        ctk.CTkLabel(left_frame, text="Negative").grid(row=10, column=0, sticky="e", padx=5, pady=5)
         ctk.CTkSwitch(left_frame, text="", variable=self.test_negative_var, onvalue=True, offvalue=False).grid(row=9, column=1, sticky="w", padx=5, pady=5)
 
         available_transforms = ["transforms.ToTensor", "transforms.Resize"]
@@ -1466,61 +1517,39 @@ class ModeltrainingGUI:
     
     def run_testing_in_thread(self):
         try:
-            # Retrieve values DIRECTLY from GUI variables
-            model = self.model_var.get()
-            attention = self.attention_var.get()
-            batchnorm = self.batchnorm_var.get()
-            encoder = self.encoder_var.get()
-            weights = self.pretrained_weights_var.get()
-            freeze = self.freeze_backbone_var.get()
-            model_path = self.test_model_path_var.get()
-            
-            loss_func = self.loss_function_var.get()
-            alpha = self.alpha_var.get()
-            beta = self.beta_var.get()  
-            gamma = self.gamma_var.get()
-            
-            # Combo loss
-            loss_func1 = self.loss_function1_var.get()
-            loss_func1_weight = self.loss_function1_weight_var.get()
-            loss_func2 = self.loss_function2_var.get()
-            loss_func2_weight = self.loss_function2_weight_var.get()
-    
-            data_dir = self.test_data_dir_var.get()
-            batch_size = int(self.test_batch_size_var.get())
-            normalize = self.normalize_var.get()
-            negative = self.test_negative_var.get()
-            transform = self.test_transforms_widget.get_sequence()
-
-
             # Construct the command
             args = ["python", "test.py"]  # Replace with your script name
-            args.extend(["--model", model])
-            args.extend(["--attention", attention])
-            args.extend(["--batchnorm", batchnorm])
-            args.extend(["--encoder", encoder])
-            if bool(weights):
+            args.extend(["--model", self.model_var.get()])
+            if self.model_var.get() in ("U-Net", "U-Net++"):
+                args.extend(["--attention", self.attention_var.get()])
+            args.extend(["--batchnorm", self.batchnorm_var.get()])
+            args.extend(["--encoder", self.encoder_var.get()])
+            if self.pretrained_weights_var.get():
                 args.append("--pretrained_weights")
-            if bool(freeze):
+            if self.freeze_backbone_var.get():
                 args.append("--freeze_backbone")
-            args.extend(["--test_model_path", model_path])
+            args.extend(["--test_model_path", self.test_model_path_var.get()])
             
-            args.extend(["--loss_function", loss_func])
-            args.extend(["--alpha", str(alpha)])
-            args.extend(["--beta", str(beta)])
-            args.extend(["--gamma", str(gamma)])
+            args.extend(["--loss_function", self.loss_function_var.get()])
+            args.extend(["--alpha", self.alpha_var.get()])
+            args.extend(["--beta", self.beta_var.get()])
+            args.extend(["--gamma", self.gamma_var.get()])
+            args.extend(["--alpha_focal", self.alpha_focal_var.get()])
+            args.extend(["--gamma_focal", self.gamma_focal_var.get()])
+            args.extend(["--topoloss_patch", self.topoloss_patch_var.get()])
+            args.extend(["--positive_weight", self.positive_weight_var.get()])
             
-            args.extend(["--loss_function1", loss_func1])
-            args.extend(["--loss_function1_weight", loss_func1_weight])
-            args.extend(["--loss_function2", loss_func2])
-            args.extend(["--loss_function2_weight", loss_func2_weight])
+            args.extend(["--loss_function1", self.loss_function1_var.get()])
+            args.extend(["--loss_function1_weight", self.loss_function1_weight_var.get()])
+            args.extend(["--loss_function2", self.loss_function2_var.get()])
+            args.extend(["--loss_function2_weight", self.loss_function2_weight_var.get()])
             
-            args.extend(["--batch_size", str(batch_size)])
-            args.extend(["--data_dir", data_dir])
-            args.extend(["--transform", str(transform)])
-            if normalize:
+            args.extend(["--batch_size", int(self.test_batch_size_var.get())])
+            args.extend(["--data_dir", self.test_data_dir_var.get()])
+            args.extend(["--transform", str(self.test_transforms_widget.get_sequence())])
+            if self.normalize_var.get():
                 args.append("--normalize")
-            if negative:
+            if self.test_negative_var.get():
                 args.append("--negative")
 
             # self.message_queue.put(f"Starting testing with arguments: {' '.join(args)}") #debug
@@ -1557,23 +1586,6 @@ class ModeltrainingGUI:
             exc_type, exc_obj, exc_tb = sys.exc_info() #get detailed error info
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             self.message_queue.put(f"An unexpected error occurred:\n{e}\nType: {exc_type}\nFile: {fname}\nLine: {exc_tb.tb_lineno}")
-    
-    def clear_last_message(self):
-        self.messages_box.config(state=tk.NORMAL)
-
-        # Get the total number of lines
-        num_lines = int(self.messages_box.index('end-1c').split('.')[0])
-
-        if num_lines >= 2:
-            # Delete the second-to-last line
-            last_line_start = f"{num_lines - 1}.0"
-            last_line_end = f"{num_lines - 1}.end+1c"
-
-            self.messages_box.delete(last_line_start, last_line_end)
-            self.messages_box.update()
-            time.sleep(0.1)
-
-        self.messages_box.config(state=tk.DISABLED)
 
     def start_training(self):
         self.plot_panel.reset_image_data()

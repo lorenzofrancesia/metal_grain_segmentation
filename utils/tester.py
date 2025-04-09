@@ -17,7 +17,7 @@ import segmentation_models_pytorch as smp
 
 from data.dataset import SegmentationDataset
 from data.functions import masked_image, image_for_plot
-from utils.metrics import BinaryMetrics
+from utils.metrics import BinaryMetrics, GrainMetrics
 
 class Tester():
     
@@ -26,11 +26,11 @@ class Tester():
                  model,
                  model_path,
                  normalize=False,
+                 negative=False,
                  test_transform=transforms.ToTensor(),
                  loss_function=nn.BCELoss(),
                  device='cuda' if torch.cuda.is_available() else 'cpu',
-                 batch_size=8,
-                 negative=False
+                 batch_size=1
                  ):
         
         self.model = model
@@ -47,7 +47,6 @@ class Tester():
         
         # Output
         self.output_dir = os.path.join(self.model_path, "../..", "test_results")
-        
         # Initialize model and optimizer
         self._initialize()
     
@@ -63,6 +62,7 @@ class Tester():
                     os.makedirs(self.output_dir)
                     break
                 counter += 1 
+        self.visualization_dir = os.path.join(self.output_dir, "viz")
         
         self.model.to(self.device)
         self._load_model()  
@@ -82,13 +82,10 @@ class Tester():
         print("Loading state dictionary...")
         self.model.load_state_dict(checkpoint['model_state_dict'])
         
-        try:
-            self.mean = checkpoint['dataset_mean']
-            self.std = checkpoint['dataset_std']
-        except:
-            self.mean = None
-            self.std = None
-            pass
+        self.mean = checkpoint.get('dataset_mean', None) # Use .get for safer access
+        self.std = checkpoint.get('dataset_std', None)
+        if self.normalize and (self.mean is None or self.std is None):
+             print("Warning: Normalization is enabled, but dataset mean/std not found in checkpoint. Using default or ImageNet stats if applicable.")
         
             
     def _get_dataloader(self):
@@ -133,16 +130,18 @@ class Tester():
                 test_loss += loss.item()        
                 
                 
-                self.all_inputs.append(inputs.detach())
-                self.all_outputs.append(outputs_probs.detach())
-                self.all_targets.append(targets.detach())
+                self.all_inputs.append(inputs.cpu().detach())
+                self.all_outputs.append(outputs_probs.cpu().detach())
+                self.all_targets.append(targets.cpu().detach())
         
         # Aggregate predicitions and targets
+        all_inputs_cat = torch.cat(self.all_inputs, dim=0)
         all_outputs_cat = torch.cat(self.all_outputs, dim=0)
         all_targets_cat = torch.cat(self.all_targets, dim=0)
         
         metrics_results = defaultdict()
         binary_metrics = BinaryMetrics(device=self.device)
+        grain_metrics = GrainMetrics(device='cpu', visualization_dir=self.visualization_dir, counter=0)
 
         # Calculate metrics at 0.5 threshold
         results_05 = binary_metrics.calculate_metrics(all_outputs_cat, all_targets_cat, threshold=0.5)
@@ -159,6 +158,15 @@ class Tester():
 
         # Calculate mAP
         metrics_results["mAP"] = average_precision_score(all_targets_cat.cpu().numpy().flatten(), all_outputs_cat.cpu().numpy().flatten())
+        
+        binarized_outputs = (all_outputs_cat > 0.5).bool() # Binarize probabilities
+        grain_results = grain_metrics.calculate_grain_similarity(
+            binarized_outputs,
+            all_targets_cat.bool(), # Ensure targets are bool for grain metrics
+            visualize=True # Generate visualizations in the specified dir
+            )
+        for metric_name, value in grain_results.items():
+             metrics_results[metric_name] = value.item() if isinstance(value, torch.Tensor) else value
         
         test_loss /= len(self.test_loader)
         

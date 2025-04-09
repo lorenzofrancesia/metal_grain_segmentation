@@ -69,16 +69,21 @@ class SegmentationDataset(Dataset):
         self.albumentation_transform = None
         if self.augment:
             self.albumentation_transform = alb.Compose([
-                alb.RandomResizedCrop(p=0.2, size=(self.target_height, self.target_width), scale=(0.6, 1.0), ratio=(0.75, 1.33)),
-                alb.HorizontalFlip(p=0.2),
-                alb.VerticalFlip(p=0.2),
+                alb.RandomResizedCrop(p=0.3, size=(self.target_height, self.target_width), scale=(0.6, 1.0), ratio=(0.75, 1.33)),
+                alb.HorizontalFlip(p=0.3),
+                alb.VerticalFlip(p=0.3),
+                alb.Rotate(p=0.3, limit=(-90, 90)),
                 
-                alb.RandomBrightnessContrast(p=0.2, brightness_limit=0.3, contrast_limit=0.3),
-                alb.HueSaturationValue(p=0.2, hue_shift_limit=30, sat_shift_limit=30, val_shift_limit=30),
+                alb.OneOf([alb.RandomBrightnessContrast(p=1, brightness_limit=0.3, contrast_limit=0.3),
+                            alb.HueSaturationValue(p=1, hue_shift_limit=30, sat_shift_limit=30, val_shift_limit=30)], p=0.3),
                 
-                alb.GaussianBlur(p=0.2, blur_limit=(3,7)),
-                alb.GaussNoise(p=0.2),
-                alb.CoarseDropout(p=0.05, num_holes_range=(1, 8), hole_height_range=(0.03, 0.1), hole_width_range=(0.03, 0.1))
+                alb.OneOf([alb.ElasticTransform(p=1.0, alpha=1.0, sigma=50, alpha_affine=50),
+                            alb.GridDistortion(p=1.0, num_steps=5, distort_limit=0.3, interpolation=cv2.INTER_LINEAR),], p=0.3),
+                
+                alb.OneOf([alb.GaussianBlur(p=1.0, blur_limit=(3,7)),
+                            alb.GaussNoise(p=1.0, var_limit=(10.0, 50.0)),], p=0.3),
+                
+                alb.CoarseDropout(p=0.1, num_holes_range=(1, 8), hole_height_range=(0.03, 0.1), hole_width_range=(0.03, 0.1))
             ])
         
         self.image_paths = [f for f in os.listdir(image_dir) if os.path.isfile(os.path.join(image_dir, f)) and f.endswith(('.png', '.jpg', '.jpeg', '.bmp'))]

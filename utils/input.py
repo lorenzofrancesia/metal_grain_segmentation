@@ -345,6 +345,8 @@ def get_args_test():
     parser.add_argument('--alpha', type=float, default=0.7, help='Alpha for FocalTversky and Tversky.')
     parser.add_argument('--beta', type=float, default=0.3, help='Beta for FocalTversky and Tversky.')
     parser.add_argument('--gamma', type=float, default=1.3333, help='Gamma for FocalTversky.')
+    parser.add_argument('--topoloss_patch', type=int, default=64, help='Patch size for Topoloss.')
+    parser.add_argument('--positive_weight', type=float, default=1.0, help='Weight for positive example in BCE.')
     
     parser.add_argument('--loss_function1', type=str, default='FocalTversky', help='Loss Function 1 for combo loss.')
     parser.add_argument('--loss_function1_weight', type=float, default=0.5, help='Weight of loss Function 1 for combo loss.')
