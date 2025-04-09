@@ -52,6 +52,7 @@ def main():
             "epochs": [30],
             "normalize": [False, True],
             "negative": [True], 
+            "augment": [True], 
             "transform": [
                 "['transforms.Resize((128, 128))','transforms.ToTensor()']"
             ],

@@ -455,25 +455,19 @@ class Trainer():
                     self.image_evolution()
         
                 # Early stopping
-                if val_loss < self.best_loss:
-                    self.best_loss = val_loss
-                    self.early_stopping_counter = 0 
-                    if self.save_output:
+                if self.save_output:
+                    if val_loss < self.best_loss:
+                        self.best_loss = val_loss
+                        self.early_stopping_counter = 0
                         best_path = f"{self.models_dir}/best.pth"
                         self._save_checkpoint(best_path)
-                        """
-                        if self.last_dice > self.best_dice:
-                            self.best_dice = self.last_dice
-                            self.early_stopping_counter = 0 
-                            if self.save_output:
-                                best_path = f"{self.models_dir}/best.pth"
-                                self._save_checkpoint(best_path)
-                        """
-                else:
-                    self.early_stopping_counter += 1
-                    if self.early_stopping_counter >= self.early_stopping:
-                        print(f"Early stopping triggered at epoch {epoch+1}")
-                        break
+                    else:
+                        self.early_stopping_counter += 1
+                        if self.early_stopping_counter >= self.early_stopping:
+                            print(f"Early stopping triggered at epoch {epoch+1}")
+                            break
+                    last_path = f"{self.models_dir}/last.pth"
+                    self._save_checkpoint(last_path)
             else:
                 if self.debugging:
                     print(f"[DEBUG] Epoch {epoch+1} is in warmup phase.")
@@ -485,11 +479,6 @@ class Trainer():
                 new_lr = self.optimizer.param_groups[0]['lr']
                 if self.debugging:
                     print(f"[DEBUG] LR Scheduler updated LR from {old_lr:.6f} to {new_lr:.6f}")
-
-        if self.save_output:
-            if self.best_loss != val_loss: 
-                last_path = f"{self.models_dir}/last.pth"
-                self._save_checkpoint(last_path)
             
             self.writer.flush() 
             self.writer.close()   

@@ -38,6 +38,7 @@ class Trainer():
                  batch_size=16,
                  normalize=False,
                  negative=False,
+                 augment=False,
                  train_transform= transforms.ToTensor(),
                  optimizer=optim.Adam, 
                  loss_function=nn.BCELoss(),
@@ -59,6 +60,7 @@ class Trainer():
         self.batch_size = batch_size
         self.normalize = normalize
         self.negative = negative
+        self.augment=augment
 
         
         # Training parameters 
@@ -90,6 +92,7 @@ class Trainer():
             mask_transform=self.train_transform,
             normalize=self.normalize,
             negative=self.negative,
+            augment=self.augment,
             verbose=False
             )
         
@@ -324,6 +327,7 @@ class HyperparameterOptimizer:
             train_transform=self.parse_transforms(other_params["transform"]),
             normalize=other_params["normalize"],
             negative=other_params["negative"],
+            augment=other_params["augment"],
         )
         
         objective_values = []
