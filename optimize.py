@@ -10,31 +10,31 @@ def main():
         "model_params": {
             "decoder_attention_type": [None], #scse
             "decoder_use_batchnorm": [True],
-            "encoder_name": ["resnet101"],
-            "encoder_weights": [None, 'imagenet'],
+            "encoder_name": ["resnet50"],
+            "encoder_weights": [None],
         },
         "optimizer_params": {
-            "optimizer": ["AdamW", "Adam"],
-            "lr": {"low": 3e-4, "high": 3e-3, "log": True},
+            "optimizer": ["Adam"],
+            "lr": {"low": 5e-5, "high": 3e-3, "log": True},
             "momentum": {"low": 0.6, "high": 0.99, "log": False},
-            "weight_decay": [1e-4]
+            "weight_decay": {"low": 5e-5, "high": 3e-3, "log": True},
         },
         "loss_params": {
-            "loss_function": ["FocalTversky"],
+            "loss_function": ["BCE"],
             #"loss_function1": ["BCE"],
             #"loss_function2": ["Topoloss"],
             #"loss_function1_weight": [1],
             #"loss_function2_weight": {"low": 1e-5, "high": 1e-1, "log": False},
-            "alpha": {"low": 0.1, "high": .99, "log": False},
-            "beta": {"low": 0.1, "high": 0.99, "log": False},
-            "gamma": {"low": 0.1, "high": 2, "log": False},
+            #"alpha": {"low": 0.1, "high": .99, "log": False},
+            #"beta": {"low": 0.1, "high": 0.99, "log": False},
+            #"gamma": {"low": 0.1, "high": 2, "log": False},
             #"topoloss_patch": [32, 64, 128],
-            #"positive_weight": {"low": 0.1, "high": 10, "log": False},
+            "positive_weight": {"low": 0.1, "high": 10, "log": False},
             # "alpha_focal": [0.8],
             # "gamma_focal": [0.2],
         },
         "warmup_params": {
-            "warmup_scheduler": [None, "Linear"],
+            "warmup_scheduler": [None],
             "warmup_steps": [1], # [1, 2, 3, 4, 5],
         },
         "scheduler_params": {
@@ -49,11 +49,11 @@ def main():
         },
         "other_params": {
             "batch_size": [64],
-            "epochs": [1],
+            "epochs": [30],
             "normalize": [False, True],
             "negative": [True], 
             "transform": [
-                "['transforms.Resize((256, 256))','transforms.ToTensor()']"
+                "['transforms.Resize((128, 128))','transforms.ToTensor()']"
             ],
         },
     }
@@ -63,23 +63,24 @@ def main():
     output_dir = "C:\\Users\\lorenzo.francesia\\Documents\\github\\runs" 
 
     # 3. Get the Model Class
-    model_class = torchseg.UnetPlusPlus
+    model_class = torchseg.Unet
 
     # 4. Create the Hyperparameter Optimizer
     optimizer = HyperparameterOptimizer(
         data_dir=data_dir,
         model_class=model_class,
         hyperparameter_space=hyperparameter_space,
-        study_name="new_test8",  # Choose a study name
+        study_name="unet_wasserstein_bce_plusdata_adam_30epochs",  # Choose a study name
         output_dir=output_dir,
+        objective_names=("wasserstein_similarity",),
+        objective_directions=("maximize",)
     )
 
     # 5. Run the Optimization
-    optimizer.optimize(n_trials=5) 
+    optimizer.optimize(n_trials=300) 
 
 
 if __name__ == "__main__":
-    #main()
+    main()
     
-    import optuna
-    optuna.delete_study(study_name="new_test8", storage="sqlite:///C://Users//lorenzo.francesia//Documents//github//runs//optimization_studies.db")
+    #optuna.delete_study(study_name="unet_wasserstein_bce_plusdata_adam", storage="sqlite:///C://Users//lorenzo.francesia//Documents//github//runs//optimization_studies.db")
