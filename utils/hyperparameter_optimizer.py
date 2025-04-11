@@ -301,7 +301,12 @@ class HyperparameterOptimizer:
         other_params = self.get_other_params(trial)
 
         # Get model
-        model = self.model_class(**model_params)
+        try:
+            model = self.model_class(**model_params)
+        except Exception as e:
+            model_params['encoder_weights'] = None
+            model = self.model_class(**model_params)
+            print("Initialization successful with encoder_weights=None.")
 
         # Create optimizer
         optimizer = self.get_optimizer(optimizer_params, model)

@@ -10,8 +10,8 @@ def main():
         "model_params": {
             "decoder_attention_type": [None], #scse
             "decoder_use_batchnorm": [True],
-            "encoder_name": ["resnet50"],
-            "encoder_weights": [None],
+            "encoder_name": ["resnest101e", "efficientnetv2_l", "seresnext101_32x8d", "hrnet_w48", "regnety_160"],    #swin_base_patch4_window7_224, maxvit_base_tf_224
+            "encoder_weights": [None, "imagenet"],
         },
         "optimizer_params": {
             "optimizer": ["Adam"],
@@ -49,12 +49,12 @@ def main():
         },
         "other_params": {
             "batch_size": [64],
-            "epochs": [30],
+            "epochs": [20],
             "normalize": [False, True],
             "negative": [True], 
             "augment": [True], 
             "transform": [
-                "['transforms.Resize((128, 128))','transforms.ToTensor()']"
+                "['transforms.Resize((256, 256))','transforms.ToTensor()']"
             ],
         },
     }
@@ -71,7 +71,7 @@ def main():
         data_dir=data_dir,
         model_class=model_class,
         hyperparameter_space=hyperparameter_space,
-        study_name="unet_wasserstein_bce_plusdata_adam_30epochs",  # Choose a study name
+        study_name="unet_wasserstein_encoders_bce_plusdata_adam_20epochs",  # Choose a study name
         output_dir=output_dir,
         objective_names=("wasserstein_similarity",),
         objective_directions=("maximize",)
@@ -84,4 +84,4 @@ def main():
 if __name__ == "__main__":
     main()
     
-    #optuna.delete_study(study_name="unet_wasserstein_bce_plusdata_adam", storage="sqlite:///C://Users//lorenzo.francesia//Documents//github//runs//optimization_studies.db")
+    #optuna.delete_study(study_name="unet_wasserstein_encoders_bce_plusdata_adam_20epochs", storage="sqlite:///C://Users//lorenzo.francesia//Documents//github//runs//optimization_studies.db")

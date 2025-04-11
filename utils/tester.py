@@ -130,9 +130,9 @@ class Tester():
                 test_loss += loss.item()        
                 
                 
-                self.all_inputs.append(inputs.cpu().detach())
-                self.all_outputs.append(outputs_probs.cpu().detach())
-                self.all_targets.append(targets.cpu().detach())
+                self.all_inputs.append(inputs.detach())
+                self.all_outputs.append(outputs_probs.detach())
+                self.all_targets.append(targets.detach())
         
         # Aggregate predicitions and targets
         all_inputs_cat = torch.cat(self.all_inputs, dim=0)

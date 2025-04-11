@@ -106,22 +106,42 @@ def get_model(args, aux_params=None):
 
     try:
         if args.model == 'U-Net' or args.model == 'Unet':
-            model = torchseg.Unet(
-                encoder_name=args.encoder,
-                encoder_weights=weights,
-                decoder_attention_type=attention,
-                decoder_use_batchnorm=batchnorm, 
-                aux_params=aux_params,
-                )
+            try:
+                model = torchseg.Unet(
+                    encoder_name=args.encoder,
+                    encoder_weights=weights,
+                    decoder_attention_type=attention,
+                    decoder_use_batchnorm=batchnorm, 
+                    aux_params=aux_params,
+                    )
+            except:
+                print("Weights not available, Starting model with randomized weights.")
+                model = torchseg.Unet(
+                    encoder_name=args.encoder,
+                    encoder_weights=None,
+                    decoder_attention_type=attention,
+                    decoder_use_batchnorm=batchnorm, 
+                    aux_params=aux_params,
+                    )
             
         elif args.model == 'U-Net++':
-            model = torchseg.UnetPlusPlus(
-                encoder_name=args.encoder,
-                encoder_weights=weights,
-                aux_params=aux_params,
-                decoder_attention_type=attention,
-                decoder_use_batchnorm=batchnorm
-                )
+            try:
+                model = torchseg.UnetPlusPlus(
+                    encoder_name=args.encoder,
+                    encoder_weights=weights,
+                    aux_params=aux_params,
+                    decoder_attention_type=attention,
+                    decoder_use_batchnorm=batchnorm
+                    )
+            except:
+                print("Weights not available, Starting model with randomized weights.")
+                model = torchseg.UnetPlusPlus(
+                    encoder_name=args.encoder,
+                    encoder_weights=None,
+                    decoder_attention_type=attention,
+                    decoder_use_batchnorm=batchnorm, 
+                    aux_params=aux_params,
+                    )
             
         elif args.model == 'MAnet':
             model = torchseg.MAnet(
