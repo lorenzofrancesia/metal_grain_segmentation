@@ -13,10 +13,7 @@ import sys
 import tqdm
 from collections import defaultdict
 from sklearn.metrics import average_precision_score
-import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader # Unless I write my own data loader
-from torch import optim
 import torchvision.transforms as transforms
 
 from loss.tversky import TverskyLoss, FocalTverskyLoss  # Correct relative import

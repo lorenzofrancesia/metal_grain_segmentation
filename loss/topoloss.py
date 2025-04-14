@@ -201,7 +201,7 @@ class TopologicalLoss(nn.Module):
 
         return pd_lh, bcp_lh, dcp_lh, True
 
-    def getTopoLoss(self, likelihood, gt, topo_size=100):
+    def getTopoLoss(self, likelihood, gt):
         """
         Calculates the topology loss of the predicted image and ground truth image.
         Warning: To make sure the topology loss is able to back-propagation, likelihood
@@ -211,7 +211,6 @@ class TopologicalLoss(nn.Module):
         Args:
             likelihood (torch.Tensor): The likelihood pytorch tensor. [H,W]
             gt (torch.Tensor): The groundtruth of pytorch tensor. [H,W]
-            topo_size (int, optional): The size of the patch is used. Defaults to 100.
 
         Returns:
             torch.Tensor: The topology loss value (tensor).
@@ -221,15 +220,15 @@ class TopologicalLoss(nn.Module):
         topo_cp_ref_map = torch.zeros_like(gt, dtype=torch.float, device=self.device)
         loss_topo = torch.tensor(0.0, device=self.device, requires_grad=True)
 
-        for y in range(0, likelihood.shape[0], topo_size):
-            for x in range(0, likelihood.shape[1], topo_size):
+        for y in range(0, likelihood.shape[0], self.topo_size):
+            for x in range(0, likelihood.shape[1], self.topo_size):
                 lh_patch = likelihood[
-                    y : min(y + topo_size, likelihood.shape[0]),
-                    x : min(x + topo_size, likelihood.shape[1]),
+                    y : min(y + self.topo_size, likelihood.shape[0]),
+                    x : min(x + self.topo_size, likelihood.shape[1]),
                 ]
                 gt_patch = gt[
-                    y : min(y + topo_size, gt.shape[0]),
-                    x : min(x + topo_size, gt.shape[1]),
+                    y : min(y + self.topo_size, gt.shape[0]),
+                    x : min(x + self.topo_size, gt.shape[1]),
                 ]
 
                 if torch.min(lh_patch) == 1 or torch.max(lh_patch) == 0:
