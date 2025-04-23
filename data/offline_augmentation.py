@@ -4,7 +4,7 @@ from PIL import Image
 import numpy as np
 
 
-def rotate(image, mask, angle, exact_angle):
+def apply_rotationù(image, mask, angle, exact_angle):
     """
     Rotate the image and mask by a specified angle.
 
@@ -29,7 +29,7 @@ def rotate(image, mask, angle, exact_angle):
     return transformed_image, transformed_mask
 
 
-def flip_horizontally(image, mask):
+def apply_horizontal_flip(image, mask):
     """
     Flip the image and mask horizontally.
 
@@ -49,7 +49,7 @@ def flip_horizontally(image, mask):
     return transformed_image, transformed_mask
 
 
-def flip_vertically(image, mask):
+def apply_vertical_flip(image, mask):
     """
     Flip the image and mask vertically.
 
@@ -69,7 +69,7 @@ def flip_vertically(image, mask):
     return transformed_image, transformed_mask
 
 
-def flip_vert_hor(image, mask):
+def apply_hv_flip(image, mask):
     """
     Flip the image and mask both horizontally and vertically.
 
@@ -91,26 +91,30 @@ def flip_vert_hor(image, mask):
     
     return transformed_image, transformed_mask
 
-def crop(image, mask):
+
+def apply_crop(image, mask, scale=(0.5,1)):
     """
-    Crop the image and mask randomly and resizes themto the original size.
+    Randomly crop the image and mask to a specified scale and resize them to the original dimensions.
 
     Args:
         image (np.ndarray): The input image to be cropped.
         mask (np.ndarray): The input mask to be cropped.
+        scale (tuple, optional): The range of the crop size relative to the original size. 
+                                 Defaults to (0.5, 1).
 
     Returns:
         tuple: A tuple containing the cropped and resized image and mask.
     """
     h, w = image.shape[:2]
     
-    transform = alb.RandomResizedCrop(p=1, size=(h,w), scale=(0.5,1))
+    transform = alb.RandomResizedCrop(p=1, size=(h,w), scale=scale)
     
     transformed = transform(image=image, mask=mask)
     transformed_image = transformed['image']
     transformed_mask = transformed['mask']
     
     return transformed_image, transformed_mask
+
 
 def apply_color_jitter(image, mask, brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1):
     """
@@ -133,6 +137,7 @@ def apply_color_jitter(image, mask, brightness=0.2, contrast=0.2, saturation=0.2
     # Mask is returned by albumentations but should be unchanged by ColorJitter
     return transformed['image'], transformed['mask']
 
+
 def apply_random_brightness_contrast(image, mask, brightness_limit=0.2, contrast_limit=0.2):
     """
     Apply random brightness and contrast adjustments to the image.
@@ -150,6 +155,7 @@ def apply_random_brightness_contrast(image, mask, brightness_limit=0.2, contrast
     transform = alb.RandomBrightnessContrast(brightness_limit=brightness_limit, contrast_limit=contrast_limit, p=1)
     transformed = transform(image=image, mask=mask)
     return transformed['image'], transformed['mask']
+
 
 def apply_rgb_shift(image, mask, r_shift_limit=20, g_shift_limit=20, b_shift_limit=20):
     """
@@ -170,6 +176,7 @@ def apply_rgb_shift(image, mask, r_shift_limit=20, g_shift_limit=20, b_shift_lim
     transformed = transform(image=image, mask=mask)
     return transformed['image'], transformed['mask']
 
+
 def apply_gauss_noise(image, mask, var_limit=(10.0, 50.0)):
     """
     Apply Gaussian noise to the image.
@@ -186,7 +193,6 @@ def apply_gauss_noise(image, mask, var_limit=(10.0, 50.0)):
     transform = alb.GaussNoise(var_limit=var_limit, p=1)
     transformed = transform(image=image, mask=mask)
     return transformed['image'], transformed['mask']
-
 
 
 def offline_augmentation(image_dir, 
@@ -256,24 +262,24 @@ def offline_augmentation(image_dir,
         if angles:
             for angle in angles:
                 rot_suffix = f"rot{angle}" if exact_angle else f"rot_rand{angle}"
-                new_img, new_mask = rotate(image, mask, angle, exact_angle)
+                new_img, new_mask = apply_rotationù(image, mask, angle, exact_angle)
                 save_augmented(new_img, new_mask, rot_suffix)   
                 
         if flip_h:        
-            new_img, new_mask = flip_horizontally(image, mask)
+            new_img, new_mask = apply_horizontal_flip(image, mask)
             save_augmented(new_img, new_mask, "hflip") 
         
         if flip_v:        
-            new_img, new_mask = flip_vertically(image, mask)
+            new_img, new_mask = apply_vertical_flip(image, mask)
             save_augmented(new_img, new_mask, "vflip")
         
         if flip_hv:
-            new_img, new_mask = flip_vert_hor(image, mask)
+            new_img, new_mask = apply_hv_flip(image, mask)
             save_augmented(new_img, new_mask, "hvflip")
             
         if rand_crop:
             for i in range(num_crops):
-                new_img, new_mask = crop(image, mask)
+                new_img, new_mask = apply_crop(image, mask)
                 save_augmented(new_img, new_mask, f"crop{i}")
                 
         if color_jitter:
@@ -306,13 +312,18 @@ def offline_augmentation(image_dir,
 
     print(f"Offline augmentation finished for {processed_count} images.")
                 
+
+if __name__ == "__main__":
+    
+    image_dir = r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\electrical_steel_dataset_plus_aug3\train\images"
+    mask_dir = r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\electrical_steel_dataset_plus_aug3\train\masks"
                 
-offline_augmentation(image_dir=r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\electrical_steel_dataset_plus_aug3\train\images",
-                     mask_dir=r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\electrical_steel_dataset_plus_aug3\train\masks",
-                     angles=90,
-                     flip_h=True,
-                     flip_v=True,
-                     flip_hv=True,
-                     rand_crop=True,
-                     num_crops=1
-)
+    offline_augmentation(image_dir= image_dir,
+                        mask_dir= mask_dir,
+                        angles=90,
+                        flip_h=True,
+                        flip_v=True,
+                        flip_hv=True,
+                        rand_crop=True,
+                        num_crops=1
+    )

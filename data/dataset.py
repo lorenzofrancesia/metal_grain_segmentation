@@ -32,6 +32,12 @@ class SegmentationDataset(Dataset):
         image_transform (callable, optional): A function/transform to apply to the images. Default is transforms.ToTensor().
         mask_transform (callable, optional): A function/transform to apply to the masks. Default is transforms.ToTensor().
         normalize (bool, optional): Whether to normalize the images. Default is False.
+        augment (bool, optional): Whether to apply data augmentation. Default is False.
+        verbose (bool, optional): Whether to print detailed information about the dataset. Default is False.
+        mean (list or None, optional): Mean values for normalization. If None, they will be calculated. Default is None.
+        std (list or None, optional): Standard deviation values for normalization. If None, they will be calculated. Default is None.
+        negative (bool, optional): Whether to invert the mask values (1 -> 0, 0 -> 1). Default is False.
+        threshold (float, optional): Threshold for converting masks to binary. Default is 0.5.
     """
     def __init__(self, 
                  image_dir, 
@@ -230,20 +236,22 @@ class SegmentationDataset(Dataset):
         if self.verbose:
             print(f"Calculated Mean: {self.mean}, Std: {self.std}")
 
-
 if __name__ == "__main__":
     
+    image_dir = r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\test_dataset\train\images"
+    mask_dir = r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\test_dataset\train\images"
+    
     dataset = SegmentationDataset(
-        image_dir=r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\test_dataset\train\images",
-        mask_dir=r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\test_dataset\train\images",
-        image_transform=transforms.Compose([transforms.Resize((512, 512)), transforms.ToTensor()]),
-        normalize=False,
-        augment=True,
-        negative=True
-        )
-    
-    
+    image_dir=image_dir,
+    mask_dir=mask_dir,
+    image_transform=transforms.Compose([transforms.Resize((512, 512)), transforms.ToTensor()]),
+    normalize=False,
+    augment=True,
+    negative=True
+    )
+
+
     image, mask = dataset[0]
-    
+
     plt.imshow(np.array(image.permute(1,2,0)))
     plt.show()

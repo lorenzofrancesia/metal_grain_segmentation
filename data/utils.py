@@ -2,6 +2,8 @@ import os
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
+from PIL import Image
+import re
 
 import torch
 from data.dataset import SegmentationDataset
@@ -96,7 +98,8 @@ def visualize_overlay(dataset, idx=None, alpha=0.5):
 
     Args:
         dataset (Dataset): The dataset to analyze.
-        class_names (list, optional): List of class names. Default is ['Background', 'Foreground'].
+        idx (int, optional): Integer corresponding to image. Defaults to None.
+        alpha (float, optional): Transparency of the overlay. Default is 0.5.
     """
     if idx is None:
         idx = np.random.randint(0, len(dataset))
@@ -166,6 +169,70 @@ def masked_image(image, mask):
     return cv2.cvtColor(masked_image, cv2.COLOR_BGR2RGB)
 
 
+def convert_jpg_to_png(folder_path):
+    """
+    Converts all .jpg files in the specified folder to .png format.
+
+    Args:
+        folder_path (str): The path to the folder containing .jpg files.
+
+    Returns:
+        None
+    """
+    # Ensure the folder exists
+    if not os.path.exists(folder_path):
+        print(f"The folder {folder_path} does not exist.")
+        return
+    
+    # Get all .jpg files in the folder
+    jpg_files = [f for f in os.listdir(folder_path) if f.lower().endswith('.jpg')]
+    
+    if not jpg_files:
+        print("No .jpg files found in the folder.")
+        return
+    
+    # Convert each .jpg file to .png
+    for jpg_file in jpg_files:
+        # Open the .jpg file
+        img = Image.open(os.path.join(folder_path, jpg_file))
+        
+        # Convert the file name to .png
+        png_file = os.path.splitext(jpg_file)[0] + '.png'
+        
+        # Save the image as .png
+        img.save(os.path.join(folder_path, png_file))
+        
+        print(f"Converted {jpg_file} to {png_file}")
+
+
+def rename_files_remove_regex(folder_path, regex=r"\._$"):
+    """
+    Renames files in the specified folder by removing trailing '._' from filenames.
+
+    Args:
+        folder_path (str): The path to the folder containing files to rename.
+
+    Returns:
+        None
+    """
+    try:
+        for filename in os.listdir(folder_path):
+            file_path = os.path.join(folder_path, filename)
+
+            if os.path.isfile(file_path):
+                new_filename = re.sub(regex, "", filename)  # Regex to remove trailing ._
+
+                if new_filename != filename:
+                    new_file_path = os.path.join(folder_path, new_filename)
+                    os.rename(file_path, new_file_path)
+                    print(f"Renamed '{filename}' to '{new_filename}'")
+                else:
+                    print(f"No change needed for '{filename}'")
+
+    except FileNotFoundError:
+        print(f"Error: Folder '{folder_path}' not found.")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 
 if __name__ == '__main__':

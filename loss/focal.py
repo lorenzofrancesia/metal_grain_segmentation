@@ -1,9 +1,22 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 class FocalLoss(nn.Module):
+    """
+    FocalLoss is a loss function designed to address class imbalance 
+    in binary or multi-class classification tasks. It applies a modulating 
+    factor to the standard binary cross-entropy loss, focusing more on 
+    hard-to-classify examples.
+
+    Args:
+        alpha (float): Weighting factor for the class imbalance. Default is 0.8.
+        gamma (float): Focusing parameter to reduce the relative loss for 
+                       well-classified examples. Default is 2.
+
+    Returns:
+        torch.Tensor: The computed focal loss value.
+    """
     def __init__(self,  alpha=0.8, gamma=2):
         super(FocalLoss, self).__init__()
         self.alpha = alpha

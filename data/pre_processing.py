@@ -4,14 +4,20 @@ import random
 import shutil
 from sklearn.model_selection import train_test_split
 
-def process_image_pairs(directory, output_dir,train_ratio=0.7, val_ratio=0.2, test_ratio=0.1):
+def process_image_pairs(directory, output_dir, train_ratio=0.7, val_ratio=0.2, test_ratio=0.1):
     """
-    Processes image pairs in a directory, splits them into slices, and saves the slices.
+    Processes image pairs in a directory, splits them into slices, and saves the slices into train, validation, and test sets.
 
     Args:
-        directory: The path to the directory containing the image files.
-    """
+        directory (str): The path to the directory containing the image files.
+        output_dir (str): The path to the directory where the processed slices will be saved.
+        train_ratio (float, optional): The ratio of images to include in the training set. Default is 0.7.
+        val_ratio (float, optional): The ratio of images to include in the validation set. Default is 0.2.
+        test_ratio (float, optional): The ratio of images to include in the test set. Default is 0.1.
 
+    Raises:
+        ValueError: If the provided directory is invalid or if the ratios do not sum to 1.0.
+    """
     if not os.path.isdir(directory):
         raise ValueError("The provided path is not a valid directory.")
     if not (train_ratio + val_ratio + test_ratio == 1.0):
@@ -89,12 +95,15 @@ def process_image_pairs(directory, output_dir,train_ratio=0.7, val_ratio=0.2, te
 
 def add_training_data(image_dir, output_dir):
     """
-    Processes image pairs in a directory, splits them into slices, and saves the slices.
+    Adds new training data by processing image pairs in a directory, splitting them into slices, and saving the slices.
 
     Args:
-        directory: The path to the directory containing the image files.
-    """
+        image_dir (str): The path to the directory containing the new image files.
+        output_dir (str): The path to the directory where the processed slices will be saved.
 
+    Raises:
+        ValueError: If the provided image directory is invalid.
+    """
     if not os.path.isdir(image_dir):
         raise ValueError("The provided path is not a valid directory.")
 
@@ -164,15 +173,14 @@ def add_training_data(image_dir, output_dir):
                 
 
 if __name__ == '__main__':
-
+    # Example usage
     # input_dir = r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Desktop\align_test\results"
     # output_dir = r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Desktop\electrical_steel_dataset"
     
     # process_image_pairs(input_dir, output_dir, train_ratio=0.8, val_ratio=0.1, test_ratio=0.1)
     
-    
-    add_training_data(image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\Documents\\Project\\alignment\\align_data\\new2",
-                      output_dir=r'C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\electrical_steel_dataset_plus\train')
-    
-    
+    add_training_data(image_dir="C:\\Users\\lorenzo.francesia\\OneDrive - Swerim\\desktop\\temptest",
+                      output_dir=r'C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\electrical_steel_dataset_plusplus\test')
+
+
 

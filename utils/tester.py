@@ -16,8 +16,8 @@ import torchvision.transforms as transforms
 import segmentation_models_pytorch as smp
 
 from data.dataset import SegmentationDataset
-from data.functions import masked_image, image_for_plot
-from utils.metrics import BinaryMetrics, GrainMetrics
+from data.utils import masked_image, image_for_plot
+from utils.metrics import BinaryMetrics, GrainMetricsExtended
 
 class Tester():
     
@@ -141,7 +141,7 @@ class Tester():
         
         metrics_results = defaultdict()
         binary_metrics = BinaryMetrics(device=self.device)
-        grain_metrics = GrainMetrics(device='cpu', visualization_dir=self.visualization_dir, counter=0)
+        grain_metrics = GrainMetricsExtended(device='cpu', visualization_dir=self.visualization_dir, counter=0)
 
         # Calculate metrics at 0.5 threshold
         results_05 = binary_metrics.calculate_metrics(all_outputs_cat, all_targets_cat, threshold=0.5)

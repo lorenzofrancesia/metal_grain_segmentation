@@ -7,7 +7,7 @@ import torch.nn.functional as F
 
 def one_hot(label, n_classes, requires_grad=True):
     """Return One Hot Label"""
-    divce = label.device
+    device = label.device
     one_hot_label = torch.eye(
         n_classes, device=device, requires_grad=requires_grad)[label]
     one_hot_label = one_hot_label.transpose(1, 3).transpose(2, 3)
@@ -104,4 +104,4 @@ if __name__ == "__main__":
     loss.backward()
     optimizer.step()
 
-    print(loss)
+    print(loss.item())
