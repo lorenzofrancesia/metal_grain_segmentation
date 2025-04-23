@@ -11,9 +11,8 @@ import numpy as np
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader # Unless I write my own data loader
+from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
-import segmentation_models_pytorch as smp
 
 from data.dataset import SegmentationDataset
 from data.utils import masked_image, image_for_plot

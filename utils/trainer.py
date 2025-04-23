@@ -16,7 +16,6 @@ from torch.utils.data import DataLoader # Unless I write my own data loader
 from torch import optim
 import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
-import segmentation_models_pytorch as smp
 
 from data.dataset import SegmentationDataset
 from utils.metrics import BinaryMetrics, GrainMetrics

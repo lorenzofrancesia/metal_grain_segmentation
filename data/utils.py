@@ -211,6 +211,7 @@ def rename_files_remove_regex(folder_path, regex=r"\._$"):
 
     Args:
         folder_path (str): The path to the folder containing files to rename.
+        regex (str): The regex pattern to match the part of the filename to remove. Default is r"\._$".
 
     Returns:
         None
@@ -273,4 +274,4 @@ if __name__ == '__main__':
     print(randint)
     image_histogram(mask)
     
-    # inspect(dataset)
+    inspect(dataset)

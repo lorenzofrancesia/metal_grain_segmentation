@@ -77,7 +77,7 @@ class ModeltrainingGUI:
 
         self.epochs_var = tk.StringVar(value="1")
         self.batch_size_var = tk.StringVar(value="6")
-        self.data_dir_var = tk.StringVar(value="c:\\Users\\lorenzo.francesia\\Documents\\github\\data")
+        self.data_dir_var = tk.StringVar(value=r"P:\Lab_Gemensam\Lorenzo\datasets\data_plusplus")
         self.output_dir_var = tk.StringVar(value="c:\\Users\\lorenzo.francesia\\Documents\\github\\runs")
         self.normalize_var = tk.BooleanVar(value=False)
         self.negative_var = tk.BooleanVar(value=False)
@@ -86,7 +86,7 @@ class ModeltrainingGUI:
         
         # testing variables
         self.test_model_path_var = tk.StringVar(value="")
-        self.test_data_dir_var = tk.StringVar(value="c:\\Users\\lorenzo.francesia\\Documents\\github\\data\\test")
+        self.test_data_dir_var = tk.StringVar(value=r"P:\Lab_Gemensam\Lorenzo\datasets\data_plusplus\test")
         self.test_batch_size_var = tk.StringVar(value="6")
         self.test_normalize_var = tk.BooleanVar(value=False)
         self.test_negative_var = tk.BooleanVar(value=False)

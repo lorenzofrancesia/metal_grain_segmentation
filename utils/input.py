@@ -14,6 +14,12 @@ from loss.focal import FocalLoss
 from loss.dice import DiceLoss, LCDiceLoss
 
 def get_args_train():
+    """
+    Parses command-line arguments for training a U-Net model.
+
+    Returns:
+        argparse.Namespace: Parsed arguments for training.
+    """
     
     parser = argparse.ArgumentParser(description='Train a U-Net model')
     
@@ -92,13 +98,28 @@ def get_args_train():
     return parser.parse_args()
 
 def freeze_encoder(model):
+    """
+    Freezes the encoder layers of a given model to prevent their weights from being updated during training.
+
+    Args:
+        model: The model whose encoder layers are to be frozen.
+    """
     for child in model.encoder.children():
         for param in child.parameters():
             param.requires_grad = False
     return
 
 def get_model(args, aux_params=None):
+    """
+    Creates and returns a segmentation model based on the provided arguments.
 
+    Args:
+        args: Parsed command-line arguments containing model configuration.
+        aux_params: Additional parameters for the model's auxiliary outputs.
+
+    Returns:
+        torch.nn.Module: The created model.
+    """
     weights = "imagenet" if bool(args.pretrained_weights) else None
     freeze = bool(args.freeze_backbone)
     attention = None if args.attention == "None" else args.attention
@@ -212,6 +233,16 @@ def get_model(args, aux_params=None):
         raise ValueError
 
 def get_optimizer(args, model):
+    """
+    Creates and returns an optimizer based on the provided arguments.
+
+    Args:
+        args: Parsed command-line arguments containing optimizer configuration.
+        model: The model whose parameters will be optimized.
+
+    Returns:
+        torch.optim.Optimizer: The created optimizer.
+    """
     try:
         if args.optimizer == "Adam":
             
@@ -235,7 +266,16 @@ def get_optimizer(args, model):
         raise ValueError
 
 def get_warmup_scheduler(args, optimizer):
-    
+    """
+    Creates and returns a warmup scheduler for the optimizer.
+
+    Args:
+        args: Parsed command-line arguments containing warmup scheduler configuration.
+        optimizer: The optimizer to which the warmup scheduler will be applied.
+
+    Returns:
+        torch.optim.lr_scheduler._LRScheduler or None: The warmup scheduler, or None if not specified.
+    """    
     if args.warmup_scheduler in [None,"None"]:
         return None
     
@@ -252,7 +292,17 @@ def get_warmup_scheduler(args, optimizer):
     return warmup
 
 def get_scheduler(args, optimizer, warmup=None):
-    
+    """
+    Creates and returns a learning rate scheduler for the optimizer.
+
+    Args:
+        args: Parsed command-line arguments containing scheduler configuration.
+        optimizer: The optimizer to which the scheduler will be applied.
+        warmup: An optional warmup scheduler to be combined with the main scheduler.
+
+    Returns:
+        torch.optim.lr_scheduler._LRScheduler or None: The learning rate scheduler, or None if not specified.
+    """    
     if args.scheduler in [None,"None"]:
         return None
     
@@ -291,13 +341,11 @@ def get_loss_function(args):
     Retrieves the loss function based on the configuration in args.
 
     Args:
-        args: The parsed command-line arguments or configuration object.
+        args: Parsed command-line arguments containing loss function configuration.
 
     Returns:
-        A loss function object or a tuple of (loss function object, weight) 
-        in the case of the "Combo" loss.
+        A loss function object or a list containing two loss functions and their weights for combo loss.
     """
-
     if args.loss_function == "FocalTversky":
         return FocalTverskyLoss(alpha=args.alpha, beta=args.beta, gamma=args.gamma)
     elif args.loss_function == "Tversky":
@@ -326,6 +374,13 @@ def get_loss_function(args):
 def get_loss_function_by_name(loss_func_name, args):
     """
     Retrieves a specific loss function by name using the provided arguments.
+
+    Args:
+        loss_func_name: The name of the loss function to retrieve.
+        args: Parsed command-line arguments containing loss function configuration.
+
+    Returns:
+        A loss function object.
     """
     if loss_func_name == "FocalTversky":
         return FocalTverskyLoss(alpha=args.alpha, beta=args.beta, gamma=args.gamma)
@@ -347,7 +402,12 @@ def get_loss_function_by_name(loss_func_name, args):
         raise ValueError(f"Invalid loss function name for Combo option: {loss_func_name}")
 
 def get_args_test():
+    """
+    Parses command-line arguments for testing a U-Net model.
     
+    Returns:
+        argparse.Namespace: Parsed arguments for testing.
+    """
     parser = argparse.ArgumentParser(description='Test a U-Net model')
     # Model parameters 
     parser.add_argument('--model', type=str, default='Unet', help='Model to train')

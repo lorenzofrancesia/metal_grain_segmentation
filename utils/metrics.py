@@ -107,372 +107,36 @@ class BinaryMetrics():
             self.metrics[metric_name] = self.metrics[metric_name].to(device)
         return self
     
-    
+
 class GrainMetrics():
-    def __init__(self, 
-                 device='cuda' if torch.cuda.is_available() else 'cpu', 
-                 visualization_dir=r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Desktop\viz", 
-                 counter=0,
-                 min_area_threshold=100):
-        self.device = device
-        
-        self.visualization_dir = visualization_dir
-        # Create visualization directory if specified
-        if visualization_dir and not os.path.exists(visualization_dir):
-            os.makedirs(visualization_dir)
-        
-        self.vis_counter = counter
-        self.min_area_threshold = min_area_threshold
-        
-    def _extract_grains(self, mask):
-        
-        if isinstance(mask, torch.Tensor):
-            mask = mask.cpu().numpy()
-        
-        inverted_mask = ~mask.astype(bool)
-        
-        labeled_mask = measure.label(inverted_mask, connectivity=2)
-        
-        regions = measure.regionprops(labeled_mask)
-        
-        filtered_regions = []
-        for region in regions:
-            if region.area > self.min_area_threshold:
-                filtered_regions.append(region)
-        
-        return labeled_mask, filtered_regions
     
-    def _visualize_distributions(self, true_areas, pred_areas, vis_identifier):
-        """
-        Visualize grain size distributions (histogram and CDF) for analysis.
+    """
+    Calculates and compares grain statistics between predicted and true masks.
 
-        Args:
-            true_areas (np.ndarray): Array of grain areas from the ground truth.
-            pred_areas (np.ndarray): Array of grain areas from the prediction.
-            vis_identifier (str): Unique identifier for the saved plot file.
-        """
-        if not self.visualization_dir: return
-        if len(true_areas) == 0 or len(pred_areas) == 0:
-            print(f"Skipping distribution visualization for {vis_identifier}: No grains found in true or pred.")
-            return
-
-        try:
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6))
-
-            # --- Histogram comparison ---
-            min_area = max(1, min(np.min(true_areas), np.min(pred_areas))) # Avoid log(0)
-            max_area = max(np.max(true_areas), np.max(pred_areas))
-            if max_area / min_area > 100 and min_area > 0 : # Heuristic for large range
-                 bins = np.logspace(np.log10(min_area), np.log10(max_area + 1), 30) # +1 in case max_area=min_area
-                 ax1.set_xscale('log')
-            else:
-                 bins = np.linspace(min_area, max_area, 30)
-
-            ax1.hist(true_areas, bins=bins, alpha=0.7, label=f'Ground Truth (N={len(true_areas)})', density=True)
-            ax1.hist(pred_areas, bins=bins, alpha=0.7, label=f'Prediction (N={len(pred_areas)})', density=True)
-            ax1.set_xlabel('Grain Area (pixels)')
-            ax1.set_ylabel('Density')
-            ax1.set_title('Grain Size Distribution (Density Histogram)')
-            ax1.legend()
-            ax1.grid(True, which='both', linestyle='--', linewidth=0.5)
-
-            # --- CDF comparison ---
-            true_sorted = np.sort(true_areas)
-            pred_sorted = np.sort(pred_areas)
-            true_cdf = np.arange(1, len(true_sorted)+1) / len(true_sorted)
-            pred_cdf = np.arange(1, len(pred_sorted)+1) / len(pred_sorted)
-
-            # Match x-axis scale with histogram if log
-            if ax1.get_xscale() == 'log':
-                ax2.set_xscale('log')
-
-            ax2.step(true_sorted, true_cdf, label='Ground Truth CDF')
-            ax2.step(pred_sorted, pred_cdf, label='Prediction CDF')
-            ax2.set_xlabel('Grain Area (pixels)')
-            ax2.set_ylabel('Cumulative Probability (CDF)')
-            ax2.set_title('Cumulative Distribution Functions')
-            ax2.legend()
-            ax2.grid(True, which='both', linestyle='--', linewidth=0.5)
-
-            # Save figure
-            save_path = os.path.join(self.visualization_dir, f'grain_distribution_{vis_identifier}.png')
-            plt.suptitle(f'Grain Area Distribution Comparison - ID: {vis_identifier}')
-            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-            plt.savefig(save_path)
-            plt.close(fig)
-
-        except Exception as e:
-            print(f"Error during distribution visualization for ID {vis_identifier}: {e}")
-
-
-    def _visualize_labeled_masks(self, true_labeled_mask, pred_labeled_mask, vis_identifier):
-        """
-        Visualize the detected grains (labeled masks) for ground truth and prediction.
-
-        Args:
-            true_labeled_mask (np.ndarray): Labeled mask for ground truth grains.
-            pred_labeled_mask (np.ndarray): Labeled mask for predicted grains.
-            vis_identifier (str): Unique identifier for the saved plot file.
-        """
-        if not self.visualization_dir: return
-
-        try:
-            fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-
-            # Prepare colormaps: Use a map that shows background (0) distinctly (e.g., black)
-            # Using 'nipy_spectral' often works well. Add black for background.
-            cmap_labels = plt.cm.nipy_spectral
-            cmap_labels.set_bad(color='black') # Map background (NaN or masked) to black if needed
-            cmap_labels.set_under(color='black') # Map values < vmin to black
-
-            # Count grains for titles
-            n_true = true_labeled_mask.max()
-            n_pred = pred_labeled_mask.max()
-
-            # Plot Ground Truth Labeled Mask
-            ax = axes[0]
-            # Using vmin=0.1 ensures label 0 (background) uses the 'under' color (black)
-            im_true = ax.imshow(true_labeled_mask, cmap=cmap_labels, vmin=0.1, vmax=max(1, n_true))
-            ax.set_title(f'Ground Truth Grains (N={n_true})')
-            ax.axis('off')
-            # plt.colorbar(im_true, ax=ax, fraction=0.046, pad=0.04) # Optional colorbar
-
-            # Plot Predicted Labeled Mask
-            ax = axes[1]
-            im_pred = ax.imshow(pred_labeled_mask, cmap=cmap_labels, vmin=0.1, vmax=max(1, n_pred))
-            ax.set_title(f'Predicted Grains (N={n_pred})')
-            ax.axis('off')
-            # plt.colorbar(im_pred, ax=ax, fraction=0.046, pad=0.04) # Optional colorbar
-
-            # Save figure
-            save_path = os.path.join(self.visualization_dir, f'labeled_masks_{vis_identifier}.png')
-            plt.suptitle(f'Detected Grain Comparison - ID: {vis_identifier}')
-            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-            plt.savefig(save_path)
-            plt.close(fig)
-
-        except Exception as e:
-            print(f"Error during labeled mask visualization for ID {vis_identifier}: {e}")
-
-
-    def calculate_grain_similarity(self, pred_masks, true_masks, visualize=True, visualize_example_image=True):
-        """
-        Calculates grain similarity metrics between predicted and ground truth masks,
-        comparing distributions of raw grain areas (in pixels). Optionally visualizes
-        distributions and an example pair of labeled masks.
-
-        Args:
-            pred_masks (torch.Tensor): Predicted masks tensor (B, H, W) or (B, 1, H, W).
-                                       Values should be probabilities or logits if not boolean.
-                                       Assumes 0=grain, 1=boundary after thresholding.
-            true_masks (torch.Tensor): Ground truth masks tensor (B, H, W) or (B, 1, H, W).
-                                       Assumes 0=grain, 1=boundary (or convertible to boolean).
-            visualize (bool): If True and `visualization_dir` is set, saves plots
-                              of the aggregated grain size distributions.
-            visualize_example_image (bool): If True (and visualize=True), saves a plot
-                                            comparing the labeled masks for the first
-                                            image in the batch.
-
-        Returns:
-            dict: A dictionary containing various grain similarity metrics calculated
-                  over the entire batch.
-        """
-
-        batch_size = pred_masks.shape[0]
-        results = defaultdict(float)
-        all_true_areas_list = []
-        all_pred_areas_list = []
-        img_grain_counts_true = []
-        img_grain_counts_pred = []
-
-        # Store data for the first image if example visualization is requested
-        first_img_labeled_true = None
-        first_img_labeled_pred = None
-        first_img_processed = False # Flag to ensure we only store the first
-
-        # --- Process each image in the batch ---
-        for i in range(batch_size):
-            pred_mask = pred_masks[i].squeeze()
-            true_mask = true_masks[i].squeeze()
-
-            # Convert to boolean mask (0=grain, 1=boundary)
-            if pred_mask.dtype != torch.bool and pred_mask.dtype != torch.uint8:
-                 pred_mask_bin = (pred_mask > 0.5)
-            else:
-                 pred_mask_bin = pred_mask.bool()
-
-            if true_mask.dtype != torch.bool and true_mask.dtype != torch.uint8:
-                 true_mask_bin = (true_mask > 0.5)
-            else:
-                 true_mask_bin = true_mask.bool()
-
-            # Extract grains (returns labeled mask and region properties)
-            labeled_mask_true, true_regions = self._extract_grains(true_mask_bin)
-            labeled_mask_pred, pred_regions = self._extract_grains(pred_mask_bin)
-
-            # Store first image's labeled masks for visualization
-            if visualize and visualize_example_image and not first_img_processed:
-                first_img_labeled_true = labeled_mask_true
-                first_img_labeled_pred = labeled_mask_pred
-                first_img_processed = True
-
-            # Get Grain Areas (Raw Pixel Counts)
-            true_areas_img = np.array([region.area for region in true_regions if region.area > 0])
-            pred_areas_img = np.array([region.area for region in pred_regions if region.area > 0])
-
-            # Accumulate stats
-            count_true = len(true_areas_img)
-            count_pred = len(pred_areas_img)
-            img_grain_counts_true.append(count_true)
-            img_grain_counts_pred.append(count_pred)
-            results['avg_grain_size_true_accum'] += np.sum(true_areas_img)
-            results['avg_grain_size_pred_accum'] += np.sum(pred_areas_img)
-            if count_true > 0:
-                results['median_grain_size_true_img_sum'] += np.median(true_areas_img)
-                results['valid_imgs_median_true'] += 1
-            if count_pred > 0:
-                results['median_grain_size_pred_img_sum'] += np.median(pred_areas_img)
-                results['valid_imgs_median_pred'] += 1
-
-            all_true_areas_list.extend(true_areas_img)
-            all_pred_areas_list.extend(pred_areas_img)
-
-        # --- Aggregate Batch Statistics ---
-        # (Calculation code remains the same as previous version)
-        results['grain_count_true_total'] = sum(img_grain_counts_true)
-        results['grain_count_pred_total'] = sum(img_grain_counts_pred)
-        results['grain_count_true_avg_per_img'] = np.mean(img_grain_counts_true) if img_grain_counts_true else 0
-        results['grain_count_pred_avg_per_img'] = np.mean(img_grain_counts_pred) if img_grain_counts_pred else 0
-        total_true_area = results['avg_grain_size_true_accum']
-        total_pred_area = results['avg_grain_size_pred_accum']
-        results['avg_grain_size_true'] = total_true_area / results['grain_count_true_total'] if results['grain_count_true_total'] > 0 else 0
-        results['avg_grain_size_pred'] = total_pred_area / results['grain_count_pred_total'] if results['grain_count_pred_total'] > 0 else 0
-        results['median_grain_size_true_avg_per_img'] = results['median_grain_size_true_img_sum'] / results['valid_imgs_median_true'] if results['valid_imgs_median_true'] > 0 else 0
-        results['median_grain_size_pred_avg_per_img'] = results['median_grain_size_pred_img_sum'] / results['valid_imgs_median_pred'] if results['valid_imgs_median_pred'] > 0 else 0
-        #del results['avg_grain_size_true_accum'], results['avg_grain_size_pred_accum']
-        #del results['median_grain_size_true_img_sum'], results['median_grain_size_pred_img_sum']
-        #del results['valid_imgs_median_true'], results['valid_imgs_median_pred']
-
-        # Convert collected areas to numpy arrays
-        all_true_areas = np.array(all_true_areas_list)
-        all_pred_areas = np.array(all_pred_areas_list)
-
-        # --- Distribution Similarity Calculations ---
-        vis_id = f"call_{self.vis_counter}" # Unique identifier for this call
-
-        if len(all_true_areas) == 0 or len(all_pred_areas) == 0:
-            print(f"Warning (ID: {vis_id}): No grains found in true or predicted masks for the batch. Distribution metrics will be zero.")
-            # Set similarity metrics to 0
-            results['wasserstein_similarity'] = 0.0
-            results['ks_similarity'] = 0.0
-            results['histogram_similarity'] = 0.0
-            results['percentile_similarity'] = 0.0
-            results['mean_similarity'] = 0.0
-            results['variance_similarity'] = 0.0
-            results['moments_similarity'] = 0.0
-            results['grain_distribution_similarity'] = 0.0
-            results['grain_count_similarity'] = 0.0
-            results['wasserstein_distance_raw'] = np.nan
-            for p in [10, 25, 50, 75, 90]: results[f'p{p}_similarity'] = 0.0
-
-             # Visualize example image even if distributions are empty (shows empty masks)
-            if visualize and visualize_example_image and first_img_labeled_true is not None:
-                 self._visualize_labeled_masks(first_img_labeled_true, first_img_labeled_pred, f"{vis_id}_example_img0")
-
-        else:
-            # --- Visualize aggregated distributions ---
-            if visualize and self.visualization_dir:
-                self._visualize_distributions(all_true_areas, all_pred_areas, vis_id)
-
-            # --- Visualize example labeled masks (first image) ---
-            if visualize and visualize_example_image and first_img_labeled_true is not None:
-                self._visualize_labeled_masks(first_img_labeled_true, first_img_labeled_pred, f"{vis_id}_example_img0")
-
-            # --- Metric Calculations (Code remains the same as previous version) ---
-
-            # 1. Wasserstein
-            emd_raw = wasserstein_distance(all_true_areas, all_pred_areas)
-            results['wasserstein_distance_raw'] = emd_raw
-            scale_factor = np.mean(all_true_areas)
-            if scale_factor < 1e-8:
-                 scaled_emd = np.inf if emd_raw > 1e-8 else 0.0
-            else:
-                 scaled_emd = emd_raw / scale_factor
-            results['wasserstein_similarity'] = 1.0 / (1.0 + scaled_emd)
-
-            # 2. Kolmogorov-Smirnov
-            ks_stat, ks_p_value = ks_2samp(all_true_areas, all_pred_areas)
-            results['ks_statistic'] = ks_stat
-            results['ks_p_value'] = ks_p_value
-            results['ks_similarity'] = 1.0 - ks_stat
-
-            # 3. Histogram
-            min_area_hist = max(1, min(np.min(all_true_areas), np.min(all_pred_areas)))
-            max_area_hist = max(np.max(all_true_areas), np.max(all_pred_areas))
-            num_bins = 30
-            if max_area_hist / min_area_hist > 100:
-                 bins = np.logspace(np.log10(min_area_hist), np.log10(max_area_hist + 1), num_bins + 1)
-            else:
-                 bins = np.linspace(min_area_hist, max_area_hist, num_bins + 1)
-            true_hist, _ = np.histogram(all_true_areas, bins=bins, density=True)
-            pred_hist, _ = np.histogram(all_pred_areas, bins=bins, density=True)
-            bin_widths = np.diff(bins)
-            results['histogram_similarity'] = np.sum(np.minimum(true_hist, pred_hist) * bin_widths)
-
-            # 4. Percentiles
-            percentiles = [10, 25, 50, 75, 90]
-            true_percentiles = np.percentile(all_true_areas, percentiles)
-            pred_percentiles = np.percentile(all_pred_areas, percentiles)
-            percentile_sims = []
-            for i, p in enumerate(percentiles):
-                 p_true, p_pred = true_percentiles[i], pred_percentiles[i]
-                 if max(p_true, p_pred) > 1e-8: ratio = min(p_true, p_pred) / max(p_true, p_pred)
-                 elif min(p_true, p_pred) <= 1e-8: ratio = 1.0
-                 else: ratio = 0.0
-                 results[f'p{p}_similarity'] = ratio
-                 percentile_sims.append(ratio)
-            results['percentile_similarity'] = np.mean(percentile_sims) if percentile_sims else 0.0
-
-            # 5. Moments
-            true_mean, pred_mean = np.mean(all_true_areas), np.mean(all_pred_areas)
-            true_var, pred_var = np.var(all_true_areas), np.var(all_pred_areas)
-            if max(true_mean, pred_mean) > 1e-8: results['mean_similarity'] = min(true_mean, pred_mean) / max(true_mean, pred_mean)
-            elif min(true_mean, pred_mean) <= 1e-8: results['mean_similarity'] = 1.0
-            else: results['mean_similarity'] = 0.0
-            if max(true_var, pred_var) > 1e-8: results['variance_similarity'] = min(true_var, pred_var) / max(true_var, pred_var)
-            elif min(true_var, pred_var) <= 1e-8: results['variance_similarity'] = results['mean_similarity']
-            else: results['variance_similarity'] = 0.0
-            results['moments_similarity'] = 0.5 * (results['mean_similarity'] + results['variance_similarity'])
-
-            # 6. Count Similarity
-            count_true_total = results['grain_count_true_total']
-            count_pred_total = results['grain_count_pred_total']
-            if max(count_true_total, count_pred_total) > 0:
-                 results['grain_count_similarity'] = min(count_true_total, count_pred_total) / max(count_true_total, count_pred_total)
-            else: results['grain_count_similarity'] = 1.0
-
-            # 7. Overall Distribution Similarity
-            main_metrics = [ ('wasserstein_similarity', 0.4), ('ks_similarity', 0.2),
-                             ('histogram_similarity', 0.2), ('percentile_similarity', 0.2) ]
-            weighted_sum = sum(results[metric] * weight for metric, weight in main_metrics)
-            total_weight = sum(weight for _, weight in main_metrics)
-            results['grain_distribution_similarity'] = weighted_sum / total_weight if total_weight > 0 else 0.0
-
-        # --- Finalization ---
-        # Increment the visualization counter for the next call
-        self.vis_counter += 1
-
-        # Convert defaultdict back to a regular dict for return
-        return dict(results)
+    Focuses on comparing the distributions of grain properties like Area,
+    Aspect Ratio, and Circularity using metrics like Wasserstein distance,
+    Kolmogorov-Smirnov test, and histogram intersection. Also provides
+    overall grain counts and an aggregated similarity score. Includes options
+    for visualizing the distributions and labeled masks.
+    """
     
-    
-class GrainMetricsExtended():
     def __init__(self, 
                  device='cuda' if torch.cuda.is_available() else 'cpu', 
                  visualization_dir=None, 
                  counter=0, 
                  eps=1e-8,
                  min_area_threshold=100):
+        
+        """
+        Initializes the metrics calculation class.
+
+        Args:
+            device (str): Computation device ('cuda' or 'cpu').
+            visualization_dir (str, optional): Directory to save visualization plots. If None, plots are not saved.
+            counter (int): Initial counter for unique visualization filenames (e.g., based on epoch or batch count).
+            eps (float): Small epsilon value to prevent division by zero in calculations.
+            min_area_threshold (int): Minimum area (in pixels) for a detected region to be considered a valid grain.
+        """
         
         self.device = device
         self.visualization_dir = visualization_dir
@@ -482,25 +146,51 @@ class GrainMetricsExtended():
         self.eps = eps
         self.min_area_threshold = min_area_threshold
 
-    def _extract_grains(self, mask):
+    def _extract_grains(self, mask):    
+        """
+        Labels connected components in a binary mask and filters them by area.
+
+        Handles binarization (threshold > 0.5) and potential inversion if the
+        mask predominantly represents the background (mean < 0.5 - user specific).
+
+        Args:
+            mask (torch.Tensor or np.ndarray): Input mask representing grains.
+
+        Returns:
+            tuple:
+                - np.ndarray: Labeled mask where each valid grain has a unique integer ID (starting from 1). Background is 0.
+                - list: List of skimage.measure.RegionProperties for grains meeting the area threshold.
+        """
+        mask = (mask > 0.5).float()
+        if torch.mean(mask) < 0.5:
+            mask = 1 - mask
+        
         if isinstance(mask, torch.Tensor):
-            # Ensure mask is on CPU and boolean/uint8 before numpy conversion
-            mask_np = mask.cpu().bool().numpy()
-        elif isinstance(mask, np.ndarray):
-            mask_np = mask.astype(bool)
-        else:
-            raise TypeError("Input mask must be a torch.Tensor or numpy.ndarray")
-
-        grains_mask = ~mask_np
-
-        labeled_mask, num_labels = measure.label(grains_mask, connectivity=2, return_num=True)
+            mask = mask.cpu().numpy().astype(bool)
+        
+        labeled_mask = measure.label(mask, connectivity=2)
 
         regions = measure.regionprops(labeled_mask)
-
-        return labeled_mask, regions
+        
+        filtered_regions = []
+        filtered_labeled_mask = np.zeros_like(labeled_mask)
+        current_label = 1
+        for region in regions:
+            if region.area > self.min_area_threshold:
+                filtered_regions.append(region)
+                filtered_labeled_mask[labeled_mask == region.label] = current_label
+                current_label += 1
+        
+        return filtered_labeled_mask, filtered_regions
 
     def _visualize_distributions(self, data_dict, vis_identifier):
-        """ Visualize distributions for multiple metrics (Area, Aspect Ratio, Circularity). """
+        """
+        Visualize distributions (Histogram + CDF) for metrics, saving each metric to a separate file.
+
+        Args:
+            data_dict (dict): Contains numpy arrays of true/pred properties (e.g., 'true_areas', 'pred_areas').
+            vis_identifier (str): Unique string used in filenames (e.g., 'batch_X').
+        """
         if not self.visualization_dir: return
 
         metrics_to_plot = [
@@ -509,257 +199,301 @@ class GrainMetricsExtended():
             ('Circularity', 'Circularity (4*pi*A/P^2)', data_dict.get('true_circularities', None), data_dict.get('pred_circularities', None)),
         ]
 
-        num_metrics = len([m for m in metrics_to_plot if m[2] is not None and m[3] is not None and len(m[2]) > 0 and len(m[3]) > 0])
-        if num_metrics == 0:
-            print(f"Skipping distribution visualization for {vis_identifier}: No valid grain data for any metric.")
-            return
+        for name, xlabel, true_data, pred_data in metrics_to_plot:
+            true_data = np.asarray(true_data)
+            pred_data = np.asarray(pred_data)
+        
+        # Skip plotting if either true or predicted data is empty for this metric
+            if true_data.size == 0 or pred_data.size == 0:
+                print(f"Skipping distribution plot for {name} ({vis_identifier}): No comparable grain data. True_N={true_data.size}, Pred_N={pred_data.size}")
+                continue
 
-        try:
-            # Adjust layout based on number of metrics with valid data
-            fig, axes = plt.subplots(num_metrics, 2, figsize=(16, 6 * num_metrics), squeeze=False)
-            plot_row = 0
+            fig = None
+            try:
+                # Create a NEW figure for EACH metric
+                fig, axes = plt.subplots(1, 2, figsize=(17, 6)) # Hist, CDF
+                ax1, ax2 = axes[0], axes[1]
 
-            for name, xlabel, true_data, pred_data in metrics_to_plot:
-                if true_data is None or pred_data is None or len(true_data) == 0 or len(pred_data) == 0:
-                    continue # Skip if no data for this metric
+                # Determine bins and scale (log for Area if wide range, linear otherwise)
+                combined_data = np.concatenate((true_data, pred_data))
+                min_val = max(self.eps, np.min(combined_data)) # Avoid log(0)
+                max_val = np.max(combined_data)
 
-                ax1 = axes[plot_row, 0]
-                ax2 = axes[plot_row, 1]
+                if min_val >= max_val: # Handle single-value case or near-zero range
+                     delta = max(self.eps, abs(max_val * 0.1))
+                     min_val = max(self.eps, max_val - delta) # Ensure min_val > 0 for log scale
+                     max_val = max_val + delta
 
-                # --- Histogram ---
-                min_val = max(self.eps, min(np.min(true_data), np.min(pred_data))) # Avoid log(0)
-                max_val = max(np.max(true_data), np.max(pred_data))
-                use_log = (name == 'Area' and max_val / min_val > 100) # Only log for area potentially
+                use_log = (name == 'Area' and max_val / (min_val + self.eps) > 100)
+                num_bins = 30
+
                 if use_log:
-                    bins = np.logspace(np.log10(min_val), np.log10(max_val + self.eps), 30)
+                    bins = np.logspace(np.log10(min_val), np.log10(max_val + self.eps), num_bins + 1)
                     ax1.set_xscale('log')
-                else:
-                    bins = np.linspace(min_val, max_val, 30)
+                    ax2.set_xscale('log')
+                elif max_val > min_val:
+                    bins = np.linspace(min_val, max_val, num_bins + 1)
+                else: # Handle single value edge case after adjustments
+                    bins = np.array([min_val, max_val])
 
-                ax1.hist(true_data, bins=bins, alpha=0.7, label=f'Truth (N={len(true_data)})', density=True)
-                ax1.hist(pred_data, bins=bins, alpha=0.7, label=f'Pred (N={len(pred_data)})', density=True)
+                # Histogram Plot
+                ax1.hist(true_data, bins=bins, alpha=0.7, label=f'Truth (N={len(true_data)})', density=True, color='blue')
+                ax1.hist(pred_data, bins=bins, alpha=0.7, label=f'Pred (N={len(pred_data)})', density=True, color='orange')
                 ax1.set_xlabel(xlabel)
                 ax1.set_ylabel('Density')
                 ax1.set_title(f'{name} Distribution (Histogram)')
                 ax1.legend()
                 ax1.grid(True, which='both', linestyle='--', linewidth=0.5)
 
-                # --- CDF ---
+                # CDF Plot (using step plot)
                 true_sorted = np.sort(true_data)
                 pred_sorted = np.sort(pred_data)
                 true_cdf = np.arange(1, len(true_sorted)+1) / len(true_sorted)
                 pred_cdf = np.arange(1, len(pred_sorted)+1) / len(pred_sorted)
 
-                if use_log:
-                    ax2.set_xscale('log')
-
-                ax2.step(true_sorted, true_cdf, label='Truth CDF')
-                ax2.step(pred_sorted, pred_cdf, label='Pred CDF')
+                ax2.step(true_sorted, true_cdf, label='Truth CDF', where='post', color='blue')
+                ax2.step(pred_sorted, pred_cdf, label='Pred CDF', where='post', color='orange')
                 ax2.set_xlabel(xlabel)
                 ax2.set_ylabel('Cumulative Probability')
                 ax2.set_title(f'{name} Cumulative Distribution')
                 ax2.legend()
                 ax2.grid(True, which='both', linestyle='--', linewidth=0.5)
+                ax2.set_ylim(0, 1.05)
 
-                plot_row += 1 # Move to next row for next metric
+                # Save and Close Individual Figure
+                save_path = os.path.join(self.visualization_dir, f'grain_distribution_{name}_{vis_identifier}.png')
+                plt.suptitle(f'{name} Distribution Comparison - ID: {vis_identifier}', fontsize=14)
+                plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+                plt.savefig(save_path)
+                # print(f"Saved distribution plot: {save_path}") # Optional: uncomment for verbose output
+                plt.close(fig)
 
-            save_path = os.path.join(self.visualization_dir, f'grain_multi_distribution_{vis_identifier}.png')
-            plt.suptitle(f'Grain Property Distribution Comparison - ID: {vis_identifier}')
-            plt.tight_layout(rect=[0, 0.03, 1, 0.97]) # Adjust rect slightly
-            plt.savefig(save_path)
-            plt.close(fig)
-
-        except Exception as e:
-            print(f"Error during multi-distribution visualization for ID {vis_identifier}: {e}")
+            except Exception as e:
+                print(f"\n--- Error during distribution visualization for {name} (ID {vis_identifier}) ---")
+                print(f"Error message: {e}")
+                # Potentially log traceback here if needed for debugging
+                if fig is not None and plt.fignum_exists(fig.number):
+                     plt.close(fig)
 
 
     def _visualize_labeled_masks(self, true_labeled_mask, pred_labeled_mask, vis_identifier):
         """ Visualize the detected grains (labeled masks) for ground truth and prediction. """
         if not self.visualization_dir: return
+        fig = None
         try:
             fig, axes = plt.subplots(1, 2, figsize=(12, 6))
-            cmap_labels = plt.cm.nipy_spectral
-            cmap_labels.set_bad(color='black')
-            cmap_labels.set_under(color='black')
+
+            # Use a suitable colormap and explicitly set background (0) color
+            cmap_labels = plt.cm.turbo
+            cmap_labels.set_bad(color='black') # Color for NaN if any
+            cmap_labels.set_under(color='black') # Color for values below vmin (i.e., 0)
+
             n_true = true_labeled_mask.max()
             n_pred = pred_labeled_mask.max()
 
-            im_true = axes[0].imshow(true_labeled_mask, cmap=cmap_labels, vmin=0.1, vmax=max(1, n_true))
+            # Plotting with vmin slightly above 0 makes background distinct
+            axes[0].imshow(true_labeled_mask, cmap=cmap_labels, vmin=0.1, vmax=max(1, n_true))
             axes[0].set_title(f'Ground Truth Grains (N={n_true})')
             axes[0].axis('off')
 
-            im_pred = axes[1].imshow(pred_labeled_mask, cmap=cmap_labels, vmin=0.1, vmax=max(1, n_pred))
+            axes[1].imshow(pred_labeled_mask, cmap=cmap_labels, vmin=0.1, vmax=max(1, n_pred))
             axes[1].set_title(f'Predicted Grains (N={n_pred})')
             axes[1].axis('off')
 
             save_path = os.path.join(self.visualization_dir, f'labeled_masks_{vis_identifier}.png')
-            plt.suptitle(f'Detected Grain Comparison - ID: {vis_identifier}')
-            plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+            plt.suptitle(f'Detected Grain Comparison - ID: {vis_identifier}', fontsize=14)
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
             plt.savefig(save_path)
+            # print(f"Saved labeled mask visualization: {save_path}") # Optional: uncomment for verbose output
             plt.close(fig)
         except Exception as e:
             print(f"Error during labeled mask visualization for ID {vis_identifier}: {e}")
+            if fig is not None and plt.fignum_exists(fig.number):
+                 plt.close(fig)
 
+    
+    def _calculate_shape_properties(self, regions):
+        """Helper calculates area, aspect ratio, circularity for a list of skimage regions."""
+        areas, aspect_ratios, circularities = [], [], []
+        for region in regions:
+            area = region.area
+            areas.append(area)
+
+            # Aspect Ratio (minor/major), handles zero major axis
+            minor_ax = region.minor_axis_length
+            major_ax = region.major_axis_length
+            aspect_ratio = (minor_ax / major_ax) if major_ax > self.eps else 0.0
+            aspect_ratios.append(aspect_ratio)
+
+            # Circularity (4*pi*Area / Perimeter^2), handles zero/invalid perimeter
+            perimeter = region.perimeter
+            if perimeter is not None and perimeter > self.eps:
+                 # Theoretical max is 1, clamp pixel-based results
+                 circularity = (4 * np.pi * area) / (perimeter**2)
+                 circularities.append(np.clip(circularity, 0.0, 1.0))
+            else:
+                 circularities.append(0.0) # Assign 0 for invalid perimeter
+
+        return np.array(areas), np.array(aspect_ratios), np.array(circularities)
+    
+    
+    def _get_distribution_similarity(self, true_dist, pred_dist, metric_prefix):
+        """
+        Calculates distribution similarity metrics (Wasserstein, KS, Histogram Intersection).
+
+        Returns 0 similarity if either distribution is empty.
+        """
+        sim_results = {}
+        similarity_value = 0.0 # Default similarity if comparison cannot be made
+
+        # Cannot compare if one or both distributions lack data
+        if true_dist.size == 0 or pred_dist.size == 0:
+            # print(f"[{metric_prefix}] Distribution Similarity: Cannot compare. True_N={true_dist.size}, Pred_N={pred_dist.size}. Setting similarity to {similarity_value}.")
+            sim_results[f'{metric_prefix}_wasserstein_similarity'] = similarity_value
+            sim_results[f'{metric_prefix}_ks_similarity'] = similarity_value
+            sim_results[f'{metric_prefix}_histogram_similarity'] = similarity_value
+            return sim_results
+
+        try:
+            # Wasserstein: Cost to transform one distribution into the other. Normalized by mean true value.
+            emd_raw = wasserstein_distance(true_dist, pred_dist)
+            scale_factor = np.mean(true_dist)
+            scaled_emd = (emd_raw / (scale_factor + self.eps)) # Use normalized distance
+            # Convert distance to similarity (1 = identical, -> 0 for large distances)
+            sim_results[f'{metric_prefix}_wasserstein_similarity'] = 1.0 / (1.0 + scaled_emd)
+
+            # KS Test: Max difference between CDFs. Similarity = 1 - statistic.
+            ks_stat, _ = ks_2samp(true_dist, pred_dist)
+            sim_results[f'{metric_prefix}_ks_similarity'] = 1.0 - ks_stat
+
+            # Histogram Intersection: Overlap between normalized histograms.
+            combined = np.concatenate((true_dist, pred_dist))
+            min_val_hist = max(self.eps, np.min(combined))
+            max_val_hist = np.max(combined)
+            num_bins = 30
+
+            # Robust bin definition
+            if min_val_hist >= max_val_hist:
+                delta = max(self.eps, abs(max_val_hist * 0.1))
+                bins = np.array([max(self.eps, max_val_hist - delta), max_val_hist + delta])
+            elif metric_prefix == 'area' and max_val_hist / (min_val_hist + self.eps) > 100: # Log scale for area
+                 bins = np.logspace(np.log10(min_val_hist), np.log10(max_val_hist + self.eps), num_bins + 1)
+            else: # Linear scale
+                 bins = np.linspace(min_val_hist, max_val_hist, num_bins + 1)
+
+            true_hist, _ = np.histogram(true_dist, bins=bins, density=True)
+            pred_hist, _ = np.histogram(pred_dist, bins=bins, density=True)
+            bin_widths = np.diff(bins)
+            intersection = np.sum(np.minimum(true_hist, pred_hist) * bin_widths)
+            sim_results[f'{metric_prefix}_histogram_similarity'] = np.clip(intersection, 0.0, 1.0)
+
+        except Exception as e:
+            print(f"\n--- Error calculating distribution similarity for {metric_prefix} ---")
+            print(f"Error message: {e}")
+            # Assign default 0 similarity on calculation error
+            sim_results[f'{metric_prefix}_wasserstein_similarity'] = 0.0
+            sim_results[f'{metric_prefix}_ks_similarity'] = 0.0
+            sim_results[f'{metric_prefix}_histogram_similarity'] = 0.0
+
+        return sim_results
 
     def calculate_grain_similarity(self, pred_masks, true_masks, visualize=True, visualize_example_image=True):
-        """ Calculates grain similarity including shape metrics (aspect ratio, circularity). """
+        """
+        Calculates grain similarity metrics for a batch of masks.
+
+        Compares distributions of area, aspect ratio, and circularity between
+        all grains found in the batch's predicted masks vs. true masks.
+
+        Args:
+            pred_masks (torch.Tensor or np.ndarray): Batch masks (B, H, W) or (B, 1, H, W). Assumes values > 0.5 are grains.
+            true_masks (torch.Tensor or np.ndarray): Batch masks (B, H, W) or (B, 1, H, W). Assumes values > 0.5 are grains.
+            visualize (bool): Generate and save distribution plots if visualization_dir is set.
+            visualize_example_image (bool): Save labeled masks for the first image in the batch if visualize=True.
+
+        Returns:
+            dict: Dictionary containing calculated similarity metrics (counts, distribution similarities, overall score).
+        """
         batch_size = pred_masks.shape[0]
         results = defaultdict(float)
 
-        # Store all properties across the batch
-        all_true_areas, all_pred_areas = [], []
-        all_true_aspect_ratios, all_pred_aspect_ratios = [], []
-        all_true_circularities, all_pred_circularities = [], []
-        img_grain_counts_true, img_grain_counts_pred = [], []
+        # Accumulate properties across all images in the batch
+        batch_true_areas, batch_pred_areas = [], []
+        batch_true_aspect_ratios, batch_pred_aspect_ratios = [], []
+        batch_true_circularities, batch_pred_circularities = [], []
 
         first_img_labeled_true, first_img_labeled_pred = None, None
         first_img_processed = False
 
         for i in range(batch_size):
-            pred_mask = pred_masks[i].squeeze()
-            true_mask = true_masks[i].squeeze()
+            pred_mask_single = torch.as_tensor(pred_masks[i], device=self.device).squeeze()
+            true_mask_single = torch.as_tensor(true_masks[i], device=self.device).squeeze()
 
-            # Binarize based on threshold (assuming 0=grain, 1=boundary after thresh)
-            pred_mask_bin = (pred_mask > 0.5) # Use appropriate threshold
-            true_mask_bin = (true_mask > 0.5) # Use appropriate threshold
+            labeled_mask_true, true_regions = self._extract_grains(true_mask_single)
+            labeled_mask_pred, pred_regions = self._extract_grains(pred_mask_single)
 
-            labeled_mask_true, true_regions = self._extract_grains(true_mask_bin)
-            labeled_mask_pred, pred_regions = self._extract_grains(pred_mask_bin)
-
+            # Store first image's labeled masks for visualization
             if visualize and visualize_example_image and not first_img_processed:
                 first_img_labeled_true = labeled_mask_true
                 first_img_labeled_pred = labeled_mask_pred
                 first_img_processed = True
 
-            # --- Extract properties for this image ---
-            true_areas_img, true_ar_img, true_circ_img = [], [], []
-            for region in true_regions:
-                area = region.area
-                if area <= self.min_area_threshold: continue
-                true_areas_img.append(area)
-                # Aspect Ratio
-                minor_ax = region.minor_axis_length
-                major_ax = region.major_axis_length
-                aspect_ratio = (minor_ax / major_ax) if major_ax > self.eps else 0.0
-                true_ar_img.append(aspect_ratio)
-                # Circularity
-                perimeter = region.perimeter
-                # Perimeter might be 0 for single pixel object, also regionprops perimeter needs care
-                if perimeter is not None and perimeter > self.eps:
-                     circularity = (4 * np.pi * area) / (perimeter**2)
-                     # Clamp circularity to [0, 1] as theoretical max is 1, but pixel approximations can exceed
-                     true_circ_img.append(np.clip(circularity, 0.0, 1.0))
-                else:
-                     true_circ_img.append(0.0) # Assign 0 if perimeter is invalid
+            # Calculate properties for this image's grains
+            true_areas_img, true_ar_img, true_circ_img = self._calculate_shape_properties(true_regions)
+            pred_areas_img, pred_ar_img, pred_circ_img = self._calculate_shape_properties(pred_regions)
 
+            # Add this image's properties to the batch lists
+            batch_true_areas.extend(true_areas_img)
+            batch_pred_areas.extend(pred_areas_img)
+            batch_true_aspect_ratios.extend(true_ar_img)
+            batch_pred_aspect_ratios.extend(pred_ar_img)
+            batch_true_circularities.extend(true_circ_img)
+            batch_pred_circularities.extend(pred_circ_img)
 
-            pred_areas_img, pred_ar_img, pred_circ_img = [], [], []
-            for region in pred_regions:
-                area = region.area
-                if area <= 0: continue
-                pred_areas_img.append(area)
-                minor_ax = region.minor_axis_length
-                major_ax = region.major_axis_length
-                aspect_ratio = (minor_ax / major_ax) if major_ax > self.eps else 0.0
-                pred_ar_img.append(aspect_ratio)
-                perimeter = region.perimeter
-                if perimeter is not None and perimeter > self.eps:
-                     circularity = (4 * np.pi * area) / (perimeter**2)
-                     pred_circ_img.append(np.clip(circularity, 0.0, 1.0))
-                else:
-                     pred_circ_img.append(0.0)
+        # Convert accumulated lists to numpy arrays for calculations
+        all_true_areas = np.array(batch_true_areas)
+        all_pred_areas = np.array(batch_pred_areas)
+        all_true_ar = np.array(batch_true_aspect_ratios)
+        all_pred_ar = np.array(batch_pred_aspect_ratios)
+        all_true_circ = np.array(batch_true_circularities)
+        all_pred_circ = np.array(batch_pred_circularities)
 
+        # Record total grain counts found across the batch
+        results['grain_count_true_total'] = float(all_true_areas.size)
+        results['grain_count_pred_total'] = float(all_pred_areas.size)
 
-            # --- Accumulate Batch Stats ---
-            img_grain_counts_true.append(len(true_areas_img))
-            img_grain_counts_pred.append(len(pred_areas_img))
-            all_true_areas.extend(true_areas_img)
-            all_pred_areas.extend(pred_areas_img)
-            all_true_aspect_ratios.extend(true_ar_img)
-            all_pred_aspect_ratios.extend(pred_ar_img)
-            all_true_circularities.extend(true_circ_img)
-            all_pred_circularities.extend(pred_circ_img)
+        # Calculate distribution similarities for the aggregated batch data
+        vis_id = f"batch_{self.vis_counter}" # Unique ID for this call's visualizations
 
-        # --- Convert lists to numpy arrays ---
-        all_true_areas = np.array(all_true_areas) if all_true_areas else np.array([0.0])
-        all_pred_areas = np.array(all_pred_areas) if all_pred_areas else np.array([0.0])
-        all_true_ar = np.array(all_true_aspect_ratios) if all_true_aspect_ratios else np.array([0.0])
-        all_pred_ar = np.array(all_pred_aspect_ratios) if all_pred_aspect_ratios else np.array([0.0])
-        all_true_circ = np.array(all_true_circularities) if all_true_circularities else np.array([0.0])
-        all_pred_circ = np.array(all_pred_circularities) if all_pred_circularities else np.array([0.0])
+        results.update(self._get_distribution_similarity(all_true_areas, all_pred_areas, "area"))
+        results.update(self._get_distribution_similarity(all_true_ar, all_pred_ar, "aspect_ratio"))
+        results.update(self._get_distribution_similarity(all_true_circ, all_pred_circ, "circularity"))
 
-        # --- Aggregate Batch Statistics (Count, Avg/Median Area - Optional to keep) ---
-        # ... (keep or remove simple avg/median calculations as needed) ...
-        results['grain_count_true_total'] = sum(img_grain_counts_true)
-        results['grain_count_pred_total'] = sum(img_grain_counts_pred)
-
-        # --- Calculate Distribution Similarity Metrics ---
-        vis_id = f"call_{self.vis_counter}"
-
-        # Helper function to calculate distribution similarity
-        def get_distribution_similarity(true_dist, pred_dist, metric_prefix):
-            sim_results = {}
-            if len(true_dist) == 0 or len(pred_dist) == 0:
-                sim_results[f'{metric_prefix}_wasserstein_similarity'] = 0.0
-                sim_results[f'{metric_prefix}_ks_similarity'] = 0.0
-                sim_results[f'{metric_prefix}_histogram_similarity'] = 0.0
-                return sim_results
-
-            # Wasserstein
-            emd_raw = wasserstein_distance(true_dist, pred_dist)
-            scale_factor = np.mean(true_dist)
-            scaled_emd = (emd_raw / scale_factor) if scale_factor > self.eps else np.inf
-            sim_results[f'{metric_prefix}_wasserstein_similarity'] = 1.0 / (1.0 + scaled_emd)
-
-            # KS Test
-            ks_stat, _ = ks_2samp(true_dist, pred_dist)
-            sim_results[f'{metric_prefix}_ks_similarity'] = 1.0 - ks_stat
-
-            # Histogram Intersection (using min/max of combined data for bins)
-            combined = np.concatenate((true_dist, pred_dist))
-            min_val_hist = max(self.eps, np.min(combined))
-            max_val_hist = np.max(combined)
-            num_bins = 30
-            if metric_prefix == 'area' and max_val_hist / min_val_hist > 100: # Log scale for area only
-                 bins = np.logspace(np.log10(min_val_hist), np.log10(max_val_hist + self.eps), num_bins + 1)
-            elif max_val_hist > min_val_hist:
-                 bins = np.linspace(min_val_hist, max_val_hist, num_bins + 1)
-            else: # Handle case where all values are the same
-                 bins = np.array([min_val_hist, min_val_hist + self.eps]) # Single bin
-
-            true_hist, _ = np.histogram(true_dist, bins=bins, density=True)
-            pred_hist, _ = np.histogram(pred_dist, bins=bins, density=True)
-            bin_widths = np.diff(bins)
-            sim_results[f'{metric_prefix}_histogram_similarity'] = np.sum(np.minimum(true_hist, pred_hist) * bin_widths)
-
-            return sim_results
-
-        # Calculate for Area, Aspect Ratio, Circularity
-        results.update(get_distribution_similarity(all_true_areas, all_pred_areas, "area"))
-        results.update(get_distribution_similarity(all_true_ar, all_pred_ar, "aspect_ratio"))
-        results.update(get_distribution_similarity(all_true_circ, all_pred_circ, "circularity"))
-
-        weights = {'area': 0.4, 'aspect_ratio': 0.3, 'circularity': 0.3}
+        # Calculate Overall Similarity Score (weighted average of Wasserstein similarities)
+        weights = {'area': 0.9, 'aspect_ratio': 0.05, 'circularity': 0.05}
         overall_sim = 0.0
         total_weight = 0.0
         for prefix, weight in weights.items():
-             # Use a key metric like Wasserstein or average the similarities
-             metric_key = f'{prefix}_wasserstein_similarity'
+             metric_key = f'{prefix}_wasserstein_similarity' # Using Wasserstein as the basis for overall score
              if metric_key in results:
+                 # Similarity is 0 if data was missing/incomparable, correctly contributing 0 here.
                  overall_sim += results[metric_key] * weight
                  total_weight += weight
-        results['grain_overall_similarity'] = overall_sim / total_weight if total_weight > 0 else 0.0
 
-        if visualize:
+        results['grain_overall_similarity'] = (overall_sim / total_weight) if total_weight > self.eps else 0.0
+
+        # Perform Visualization if requested and directory is set
+        if visualize and self.visualization_dir:
             vis_data = {
                 'true_areas': all_true_areas, 'pred_areas': all_pred_areas,
                 'true_aspect_ratios': all_true_ar, 'pred_aspect_ratios': all_pred_ar,
                 'true_circularities': all_true_circ, 'pred_circularities': all_pred_circ
             }
-            if self.visualization_dir:
-                self._visualize_distributions(vis_data, vis_id)
-            if visualize_example_image and first_img_labeled_true is not None:
-                self._visualize_labeled_masks(first_img_labeled_true, first_img_labeled_pred, f"{vis_id}_example_img0")
+            self._visualize_distributions(vis_data, vis_id)
 
-        self.vis_counter += 1
-        return dict(results) # Return results dictionary
+            if visualize_example_image and first_img_labeled_true is not None and first_img_labeled_pred is not None:
+                self._visualize_labeled_masks(first_img_labeled_true, first_img_labeled_pred, f"{vis_id}_example_img0")
+            elif visualize_example_image:
+                 print(f"[{vis_id}] Labeled mask visualization requested, but no valid masks generated for the first image.")
+
+        self.vis_counter += 1 # Increment counter for the next function call
+        return dict(results)

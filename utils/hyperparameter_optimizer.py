@@ -28,6 +28,31 @@ from optuna.visualization import plot_param_importances, plot_optimization_histo
 
 
 class Trainer():
+    """
+    A class to handle the training process for a segmentation model.
+
+    Attributes:
+        model (torch.nn.Module): The model to be trained.
+        optimizer (torch.optim.Optimizer): The optimizer used for training.
+        loss_function (callable): The loss function used for training.
+        device (str): The device to use for training ('cuda' or 'cpu').
+        lr_scheduler (torch.optim.lr_scheduler._LRScheduler or None): Learning rate scheduler.
+        data_dir (str): Path to the dataset directory.
+        train_transform (torchvision.transforms.Compose): Transformations applied to training data.
+        batch_size (int): Batch size for training and validation.
+        normalize (bool): Whether to normalize the dataset.
+        negative (bool): Whether to invert samples.
+        augment (bool): Whether to apply data augmentation.
+        epochs (int): Number of training epochs.
+        warmup_epochs (int): Number of warmup epochs (if applicable).
+        total_epochs (int): Total number of epochs (warmup + training).
+        current_epoch (int): Current epoch during training.
+        best_loss (float): Best validation loss achieved during training.
+        best_dice (float): Best Dice score achieved during training.
+        early_stopping_counter (int): Counter for early stopping.
+        train_losses (list): List of training losses per epoch.
+        val_losses (list): List of validation losses per epoch.
+    """
     
     def __init__(self, 
                  data_dir,
@@ -36,7 +61,7 @@ class Trainer():
                  normalize=False,
                  negative=False,
                  augment=False,
-                 train_transform= transforms.ToTensor(),
+                 train_transform=transforms.ToTensor(),
                  optimizer=optim.Adam, 
                  loss_function=nn.BCELoss(),
                  device='cuda' if torch.cuda.is_available() else 'cpu',
@@ -44,6 +69,24 @@ class Trainer():
                  warmup=3,
                  epochs=10,
                  ):
+        """
+        Initializes the Trainer class with the given parameters.
+
+        Args:
+            data_dir (str): Path to the dataset directory.
+            model (torch.nn.Module): The model to be trained.
+            batch_size (int, optional): Batch size for training and validation. Defaults to 16.
+            normalize (bool, optional): Whether to normalize the dataset. Defaults to False.
+            negative (bool, optional): Whether to invert samples. Defaults to False.
+            augment (bool, optional): Whether to apply data augmentation. Defaults to False.
+            train_transform (torchvision.transforms.Compose, optional): Transformations applied to training data. Defaults to transforms.ToTensor().
+            optimizer (torch.optim.Optimizer, optional): The optimizer used for training. Defaults to optim.Adam.
+            loss_function (callable, optional): The loss function used for training. Defaults to nn.BCELoss().
+            device (str, optional): The device to use for training ('cuda' or 'cpu'). Defaults to 'cuda' if available.
+            lr_scheduler (torch.optim.lr_scheduler._LRScheduler or None, optional): Learning rate scheduler. Defaults to None.
+            warmup (int, optional): Number of warmup epochs. Defaults to 3.
+            epochs (int, optional): Number of training epochs. Defaults to 10.
+        """
         
         self.model = model
         self.optimizer = optimizer
@@ -237,6 +280,22 @@ class Trainer():
         self.last_loss = val_loss
 
 class HyperparameterOptimizer:
+    """
+    A class to optimize hyperparameters for a segmentation model using Optuna.
+
+    Attributes:
+        data_dir (str): Path to the dataset directory.
+        model_class (type): The class of the model to be optimized.
+        hyperparameter_space (dict): The search space for hyperparameters.
+        study_name (str): Name of the Optuna study.
+        storage (str or None): Path to the Optuna storage database.
+        output_dir (str): Directory to save optimization results.
+        device (str): Device to use for training ('cuda' or 'cpu').
+        objective_names (tuple): Names of the objectives to optimize.
+        objective_directions (tuple): Directions for each objective ('minimize' or 'maximize').
+        is_multi_objective (bool): Whether the optimization is multi-objective.
+        study (optuna.Study): The Optuna study object.
+    """
     def __init__(self,
                  data_dir,
                  model_class,
