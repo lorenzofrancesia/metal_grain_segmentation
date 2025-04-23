@@ -83,7 +83,7 @@ def get_args_train():
     parser.add_argument("--normalize", default=False, action="store_true", help="Activate normalization.")
     parser.add_argument("--negative", default=False, action="store_true", help="Images are inverted.")
     parser.add_argument("--augment", default=False, action="store_true", help="Online augmentation.")
-    parser.add_argument('--transform', type=str, default='transforms.ToTensor', help='Transform to apply to the dataset.')
+    parser.add_argument('--transform', type=str, default="['transforms.Resize((512, 512))','transforms.ToTensor()']", help='Transform to apply to the dataset.')
     
     # # To implement
     # parser.add_argument("--resume", default=False, action="store_true", help="Resume traing from last model saved")

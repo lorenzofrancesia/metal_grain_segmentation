@@ -349,9 +349,9 @@ class GrainMetrics():
         results['avg_grain_size_pred'] = total_pred_area / results['grain_count_pred_total'] if results['grain_count_pred_total'] > 0 else 0
         results['median_grain_size_true_avg_per_img'] = results['median_grain_size_true_img_sum'] / results['valid_imgs_median_true'] if results['valid_imgs_median_true'] > 0 else 0
         results['median_grain_size_pred_avg_per_img'] = results['median_grain_size_pred_img_sum'] / results['valid_imgs_median_pred'] if results['valid_imgs_median_pred'] > 0 else 0
-        del results['avg_grain_size_true_accum'], results['avg_grain_size_pred_accum']
-        del results['median_grain_size_true_img_sum'], results['median_grain_size_pred_img_sum']
-        del results['valid_imgs_median_true'], results['valid_imgs_median_pred']
+        #del results['avg_grain_size_true_accum'], results['avg_grain_size_pred_accum']
+        #del results['median_grain_size_true_img_sum'], results['median_grain_size_pred_img_sum']
+        #del results['valid_imgs_median_true'], results['valid_imgs_median_pred']
 
         # Convert collected areas to numpy arrays
         all_true_areas = np.array(all_true_areas_list)

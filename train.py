@@ -1,8 +1,6 @@
 from utils.input import get_args_train, get_model, get_optimizer, get_scheduler, get_loss_function, parse_transforms, get_warmup_scheduler
 from utils.trainer import Trainer            
 
-
-
  
 def main():
     
@@ -47,6 +45,6 @@ if __name__ == "__main__":
     main()
     
     
-#python train.py --data_dir ../data --batch_size 6 --epochs 10 --lr 0.0001 --model unet --output_dir ../output
+#python train.py --model Unet --encoder seresnext101_32x8d --pretrained_weights --data_dir c:\Users\lorenzo.francesia\Documents\github\data_plus --batch_size 64 --epochs 30 --lr 0.0021916468169702035 --momentum 0.9554716028979953 --weight_decay 9.7083784789214e-05 --model unet --loss_function BCE --positive_weight 3.9815239295230382 --output_dir c:\Users\lorenzo.francesia\Documents\github\runs --negative --normalize --augment --transform "['transforms.Resize((512, 512))','transforms.ToTensor()']"
 
 #python train.py --resume --model unet --data_dir ../data  --epochs 3 --checkpoint_path ../output/models/best.pth

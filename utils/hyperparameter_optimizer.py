@@ -268,7 +268,7 @@ class HyperparameterOptimizer:
             db_name = "optimization_studies.db"  # Use a common database file
             self.storage = f"sqlite:///{os.path.join(self.output_dir, db_name)}"
         else:
-            self.storage = storage
+            self.storage = f"sqlite:///{os.path.join(self.output_dir, storage)}"
         print(f"Using Optuna storage: {self.storage}")
 
         if self.is_multi_objective:
