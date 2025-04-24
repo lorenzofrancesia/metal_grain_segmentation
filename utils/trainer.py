@@ -67,7 +67,7 @@ class Trainer():
         # Early stopping
         self.early_stopping = early_stopping
         self.best_loss = float("inf")
-        self.best_dice = 0
+        self.best_metric = 0
         self.early_stopping_counter = 0
         
         # Output
@@ -195,11 +195,15 @@ class Trainer():
 
                 # Get metric names from BinaryMetrics class
                 binary_metrics = BinaryMetrics()
-                metric_names = list(binary_metrics.metrics.keys())  # Get a list of the metric names
+                metric_names = list(binary_metrics.metrics.keys())  
+                
+                grain_metrics = GrainMetrics()
+                grain_names = list(grain_metrics.get_metrics_names())
                 
                 ## ADD NEW METRICS
 
-                headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate"] + metric_names + ["mAP", "mIoU"] # Modified Header
+                headers = ["Epochs", "Train Loss", "Val Loss", "Learning Rate"] + metric_names + ["mAP", "mIoU"] + grain_names # Modified Header
+                
                 writer.writerow(headers)
                
     def _log_results_to_csv(self, epoch, train_loss, val_loss):
@@ -431,7 +435,7 @@ class Trainer():
             self.train_losses.append(train_loss)
 
             val_loss, self.metrics = self._validate()
-            self.last_dice = self.metrics["Dice"]
+            self.last_metric = self.metrics["grain_overall_similarity"]
             
             if self.save_output:
                 self.writer.add_scalar("Loss/train", train_loss, epoch)
@@ -465,6 +469,12 @@ class Trainer():
                         if self.early_stopping_counter >= self.early_stopping:
                             print(f"Early stopping triggered at epoch {epoch+1}")
                             break
+                        
+                    if self.last_metric > self.best_metric:
+                        self.best_metric = self.last_metric
+                        best_path = f"{self.models_dir}/best_similarity.pth"
+                        self._save_checkpoint(best_path)
+                        
                     last_path = f"{self.models_dir}/last.pth"
                     self._save_checkpoint(last_path)
             else:

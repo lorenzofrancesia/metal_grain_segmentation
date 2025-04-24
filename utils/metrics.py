@@ -39,6 +39,7 @@ class BinaryMetrics():
             the names of the metrics, and the values are the *TorchMetrics metric objects*
             (not the functions themselves, as in the original).
     """
+    
     def __init__(self, eps=1e-5, num_classes=1, device=None):
         self.eps = eps
         self.device = device if device is not None else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -119,6 +120,25 @@ class GrainMetrics():
     overall grain counts and an aggregated similarity score. Includes options
     for visualizing the distributions and labeled masks.
     """
+    
+    _DISTRIBUTION_PREFIXES = ['area', 'aspect_ratio', 'circularity']
+    _DISTRIBUTION_METRICS_SUFFIXES = ['wasserstein_similarity', 'ks_similarity', 'histogram_similarity']
+    _COUNT_METRICS = ['grain_count_true_total', 'grain_count_pred_total']
+    _OVERALL_METRIC = 'grain_overall_similarity'
+    
+    @staticmethod
+    def get_metric_names():
+        """
+        Returns the list of metric names calculated by calculate_grain_similarity,
+        in the order they are returned.
+        """
+        names = []
+        names.extend(GrainMetrics._COUNT_METRICS)
+        for prefix in GrainMetrics._DISTRIBUTION_PREFIXES:
+            for suffix in GrainMetrics._DISTRIBUTION_METRICS_SUFFIXES:
+                names.append(f"{prefix}_{suffix}")
+        names.append(GrainMetrics._OVERALL_METRIC)
+        return names
     
     def __init__(self, 
                  device='cuda' if torch.cuda.is_available() else 'cpu', 

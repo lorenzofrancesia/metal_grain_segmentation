@@ -19,6 +19,34 @@ from data.utils import masked_image, image_for_plot
 from utils.metrics import BinaryMetrics, GrainMetricsExtended
 
 class Tester():
+    """
+    A class for testing a segmentation model on a dataset.
+
+    This class handles loading a trained model, preparing the test dataset, 
+    evaluating the model's performance, and saving the results. It also provides 
+    functionality for visualizing and saving predictions.
+
+    Attributes:
+        data_dir (str): Path to the directory containing test images and masks.
+        model (torch.nn.Module): The segmentation model to be tested.
+        model_path (str): Path to the trained model checkpoint.
+        normalize (bool): Whether to normalize the input images.
+        negative (bool): Whether to invert the input images.
+        test_transform (torchvision.transforms): Transformations to apply to test images and masks.
+        loss_function (torch.nn.Module or list): Loss function(s) used for evaluation.
+        device (str): Device to run the model on ('cuda' or 'cpu').
+        batch_size (int): Batch size for the DataLoader.
+        output_dir (str): Directory to save test results and visualizations.
+
+    Methods:
+        __init__: Initializes the Tester class with the given parameters.
+        _initialize: Prepares the output directory and loads the model.
+        _load_model: Loads the model checkpoint and associated metadata.
+        _get_dataloader: Prepares the DataLoader for the test dataset.
+        test: Evaluates the model on the test dataset and calculates metrics.
+        plot_results: Visualizes input images, predicted masks, and target masks.
+        save_predictions: Saves predicted masks as images.
+    """
     
     def __init__(self, 
                  data_dir,
