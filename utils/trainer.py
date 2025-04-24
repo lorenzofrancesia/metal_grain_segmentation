@@ -21,6 +21,49 @@ from data.dataset import SegmentationDataset
 from utils.metrics import BinaryMetrics, GrainMetrics
 
 class Trainer():
+    """
+    A class to handle the training and validation process for a segmentation model.
+
+    This class provides functionality for training, validating, and saving the model, 
+    as well as logging metrics, visualizing results, and managing configurations.
+
+    Attributes:
+        data_dir (str): Path to the dataset directory.
+        model (torch.nn.Module): The segmentation model to be trained.
+        batch_size (int): Batch size for training and validation.
+        normalize (bool): Whether to normalize the dataset.
+        negative (bool): Whether to invert samples in the dataset.
+        augment (bool): Whether to apply data augmentation.
+        train_transform (torchvision.transforms): Transformations to apply to training data.
+        optimizer (torch.optim.Optimizer): Optimizer for training.
+        loss_function (torch.nn.Module or list): Loss function or a list of loss functions with weights.
+        device (str): Device to use for training ('cuda' or 'cpu').
+        lr_scheduler (torch.optim.lr_scheduler): Learning rate scheduler.
+        warmup (int): Number of warmup epochs.
+        epochs (int): Number of training epochs.
+        output_dir (str): Directory to save outputs (e.g., models, logs, results).
+        early_stopping (int): Number of epochs to wait before stopping if no improvement.
+        verbose (bool): Whether to print detailed logs during training.
+        config (object): Configuration object containing model and training parameters.
+        save_output (bool): Whether to save outputs such as models and logs.
+
+    Methods:
+        train(): Executes the training and validation process.
+        _initialize_training(): Prepares the model for training by moving it to the specified device.
+        _initialize_output_folder(): Creates directories for saving outputs.
+        _save_config(): Saves the training configuration to a YAML file.
+        _initialize_csv(): Initializes a CSV file for logging metrics.
+        _log_results_to_csv(epoch, train_loss, val_loss): Logs training and validation results to the CSV file.
+        _get_dataloaders(): Prepares the training and validation data loaders.
+        _save_checkpoint(checkpoint_path): Saves the model checkpoint to the specified path.
+        _train_step(batch): Performs a single training step on a batch of data.
+        _validate(): Validates the model on the validation dataset and computes metrics.
+        loss_plots(): Generates and saves loss plots for training and validation.
+        pr_curve(outputs, targets): Generates and saves a precision-recall curve.
+        image_evolution(): Visualizes the model's output evolution during training.
+        create_animation(): Creates an animation of the model's output evolution.
+        find_best_threshold(): Finds the best threshold for binary segmentation based on IoU.
+    """
     
     def __init__(self, 
                  data_dir,
@@ -198,7 +241,7 @@ class Trainer():
                 metric_names = list(binary_metrics.metrics.keys())  
                 
                 grain_metrics = GrainMetrics()
-                grain_names = list(grain_metrics.get_metrics_names())
+                grain_names = list(grain_metrics.get_metric_names())
                 
                 ## ADD NEW METRICS
 
@@ -658,6 +701,6 @@ class Trainer():
         print(f"Best threshold: {best_threshold} with IoU: {best_iou:.4f}")
         
         self.pr_curve(outputs=all_outputs.cpu().numpy().flatten(), targets=all_targets.cpu().numpy().flatten())
-            
-        
-        
+
+
+

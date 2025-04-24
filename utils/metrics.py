@@ -490,16 +490,28 @@ class GrainMetrics():
 
         # Calculate Overall Similarity Score (weighted average of Wasserstein similarities)
         weights = {'area': 0.9, 'aspect_ratio': 0.05, 'circularity': 0.05}
-        overall_sim = 0.0
+        shape_similarity_weighted = 0.0
         total_weight = 0.0
         for prefix, weight in weights.items():
-             metric_key = f'{prefix}_wasserstein_similarity' # Using Wasserstein as the basis for overall score
+             metric_key = f'{prefix}_{self._DISTRIBUTION_METRICS_SUFFIXES[0]}' # Using Wasserstein as the basis for overall score
              if metric_key in results:
                  # Similarity is 0 if data was missing/incomparable, correctly contributing 0 here.
-                 overall_sim += results[metric_key] * weight
+                 shape_similarity_weighted += results[metric_key] * weight
                  total_weight += weight
-
-        results['grain_overall_similarity'] = (overall_sim / total_weight) if total_weight > self.eps else 0.0
+        
+        wasserstein_similarity = (shape_similarity_weighted / total_weight) if total_weight > self.eps else 0.0
+        n_true = results[self._COUNT_METRICS[0]]
+        n_pred = results[self._COUNT_METRICS[1]]
+        
+        if n_true == 0 and n_pred == 0:
+             count_similarity = 1.0
+             wasserstein_similarity = 0.0 
+        else:
+             min_count = min(n_true, n_pred)
+             max_count = max(n_true, n_pred)
+             count_similarity = min_count / (max_count + self.eps)
+             
+        results['grain_overall_similarity'] = wasserstein_similarity * count_similarity
 
         # Perform Visualization if requested and directory is set
         if visualize and self.visualization_dir:
