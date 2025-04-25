@@ -8,16 +8,16 @@ def main():
     # 1. Define the Hyperparameter Space
     hyperparameter_space = {
         "model_params": {
-            "decoder_attention_type": [None], #scse
+            "decoder_attention_type": [None, "scse"], #scse
             "decoder_use_batchnorm": [True],
-            "encoder_name": ["seresnext101_32x8d"], #["resnest101e", "efficientnetv2_l", "seresnext101_32x8d", "hrnet_w48", "regnety_160"],    #swin_base_patch4_window7_224, maxvit_base_tf_224
+            "encoder_name": ["resnet34d"], #["resnest101e", "efficientnetv2_l", "seresnext101_32x8d", "hrnet_w48", "regnety_160"],    #swin_base_patch4_window7_224, maxvit_base_tf_224
             "encoder_weights": [None, "imagenet"],
         },
         "optimizer_params": {
             "optimizer": ["Adam"],
-            "lr": {"low": 1e-4, "high": 2e-3, "log": True}, #{"low": 5e-5, "high": 3e-3, "log": True}
-            "momentum": {"low": 0.8, "high": 0.95, "log": False},
-            "weight_decay": {"low": 1e-4, "high": 2e-3, "log": True},
+            "lr": {"low": 1e-5, "high": 2e-3, "log": True}, #{"low": 5e-5, "high": 3e-3, "log": True}
+            "momentum": {"low": 0.6, "high": 0.99, "log": False},
+            "weight_decay": {"low": 5e-5, "high": 2e-3, "log": True},
         },
         "loss_params": {
             "loss_function": ["Combo"],

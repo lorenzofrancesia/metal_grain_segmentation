@@ -121,7 +121,7 @@ class GrainMetrics():
     for visualizing the distributions and labeled masks.
     """
     
-    _DISTRIBUTION_PREFIXES = ['area', 'aspect_ratio', 'circularity']
+    _DISTRIBUTION_PREFIXES = ['area', 'aspect_ratio'] #, 'circularity']
     _DISTRIBUTION_METRICS_SUFFIXES = ['wasserstein_similarity', 'ks_similarity', 'histogram_similarity']
     _COUNT_METRICS = ['grain_count_true_total', 'grain_count_pred_total']
     _OVERALL_METRIC = 'grain_overall_similarity'
@@ -216,7 +216,7 @@ class GrainMetrics():
         metrics_to_plot = [
             ('Area', 'Grain Area (pixels)', data_dict.get('true_areas', None), data_dict.get('pred_areas', None)),
             ('AspectRatio', 'Aspect Ratio (Minor/Major)', data_dict.get('true_aspect_ratios', None), data_dict.get('pred_aspect_ratios', None)),
-            ('Circularity', 'Circularity (4*pi*A/P^2)', data_dict.get('true_circularities', None), data_dict.get('pred_circularities', None)),
+            #('Circularity', 'Circularity (4*pi*A/P^2)', data_dict.get('true_circularities', None), data_dict.get('pred_circularities', None)),
         ]
 
         for name, xlabel, true_data, pred_data in metrics_to_plot:
@@ -486,10 +486,10 @@ class GrainMetrics():
 
         results.update(self._get_distribution_similarity(all_true_areas, all_pred_areas, "area"))
         results.update(self._get_distribution_similarity(all_true_ar, all_pred_ar, "aspect_ratio"))
-        results.update(self._get_distribution_similarity(all_true_circ, all_pred_circ, "circularity"))
+        # results.update(self._get_distribution_similarity(all_true_circ, all_pred_circ, "circularity"))
 
         # Calculate Overall Similarity Score (weighted average of Wasserstein similarities)
-        weights = {'area': 0.9, 'aspect_ratio': 0.05, 'circularity': 0.05}
+        weights = {'area': 0.9, 'aspect_ratio': 0.1} #, 'circularity': 0.05}
         shape_similarity_weighted = 0.0
         total_weight = 0.0
         for prefix, weight in weights.items():
@@ -518,7 +518,7 @@ class GrainMetrics():
             vis_data = {
                 'true_areas': all_true_areas, 'pred_areas': all_pred_areas,
                 'true_aspect_ratios': all_true_ar, 'pred_aspect_ratios': all_pred_ar,
-                'true_circularities': all_true_circ, 'pred_circularities': all_pred_circ
+                #'true_circularities': all_true_circ, 'pred_circularities': all_pred_circ
             }
             self._visualize_distributions(vis_data, vis_id)
 

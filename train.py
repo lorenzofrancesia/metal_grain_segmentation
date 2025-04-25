@@ -47,4 +47,6 @@ if __name__ == "__main__":
     
 #python train.py --model Unet --encoder seresnext101_32x8d --pretrained_weights --data_dir c:\Users\lorenzo.francesia\Documents\github\data_plus --batch_size 64 --epochs 30 --lr 0.0021916468169702035 --momentum 0.9554716028979953 --weight_decay 9.7083784789214e-05 --model unet --loss_function BCE --positive_weight 3.9815239295230382 --output_dir c:\Users\lorenzo.francesia\Documents\github\runs --negative --normalize --augment --transform "['transforms.Resize((512, 512))','transforms.ToTensor()']"
 
+#python train.py --encoder resnet50 --data_dir c:\Users\lorenzo.francesia\Documents\github\data_plusplus --batch_size 64 --epochs 50 --lr 0.001976640623019965 --momentum 0.8370242881178209 --weight_decay 0.00012555404478136576 --model unet --loss_function BCE --positive_weight 4.391948254298507 --negative --normalize --augment --transform "['transforms.Resize((512, 512))','transforms.ToTensor()']"
+
 #python train.py --resume --model unet --data_dir ../data  --epochs 3 --checkpoint_path ../output/models/best.pth

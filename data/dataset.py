@@ -49,7 +49,8 @@ class SegmentationDataset(Dataset):
                  verbose=False, 
                  mean=None, 
                  std=None, 
-                 negative=False, 
+                 negative=False,
+                 color_space="LAB", 
                  threshold=0.5):
         
         self.image_dir = image_dir
@@ -63,6 +64,7 @@ class SegmentationDataset(Dataset):
         self.verbose = verbose
         self.threshold = threshold
         self.augment = augment
+        self.color_space = color_space
         
         extracted_dims = get_resize_dims_from_transform(self.image_transform)
         if extracted_dims:
@@ -124,6 +126,12 @@ class SegmentationDataset(Dataset):
         
         image = Image.open(img_path).convert("RGB")
         mask = Image.open(mask_path).convert("L")
+        
+        if self.color_space not in ['RGB', "None", None]:
+            try:
+                image = Image.open(img_path).convert(self.color_space)
+            except Exception as e:
+                print("Color space not available. Proceeding with RGB")
         
         image_np = np.array(image)
         mask_np = np.array(mask)
