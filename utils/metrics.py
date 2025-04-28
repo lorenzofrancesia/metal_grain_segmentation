@@ -2,7 +2,7 @@ import torch
 import torchmetrics
 import numpy as np
 from skimage import measure
-from scipy.stats import wasserstein_distance,ks_2samp
+from scipy.stats import wasserstein_distance,ks_2samp, lognorm, kstest
 from collections import defaultdict
 import os
 import matplotlib.pyplot as plt
@@ -121,7 +121,7 @@ class GrainMetrics():
     for visualizing the distributions and labeled masks.
     """
     
-    _DISTRIBUTION_PREFIXES = ['area', 'aspect_ratio'] #, 'circularity']
+    _DISTRIBUTION_PREFIXES = ['area', "diameter", 'aspect_ratio'] #, 'circularity']
     _DISTRIBUTION_METRICS_SUFFIXES = ['wasserstein_similarity', 'ks_similarity', 'histogram_similarity']
     _COUNT_METRICS = ['grain_count_true_total', 'grain_count_pred_total']
     _OVERALL_METRIC = 'grain_overall_similarity'
@@ -215,6 +215,7 @@ class GrainMetrics():
 
         metrics_to_plot = [
             ('Area', 'Grain Area (pixels)', data_dict.get('true_areas', None), data_dict.get('pred_areas', None)),
+            ('Diameter', 'Equivalent Diameter (pixels)', data_dict.get('true_diameters', None), data_dict.get('pred_diameters', None)),
             ('AspectRatio', 'Aspect Ratio (Minor/Major)', data_dict.get('true_aspect_ratios', None), data_dict.get('pred_aspect_ratios', None)),
             #('Circularity', 'Circularity (4*pi*A/P^2)', data_dict.get('true_circularities', None), data_dict.get('pred_circularities', None)),
         ]
@@ -334,10 +335,13 @@ class GrainMetrics():
     
     def _calculate_shape_properties(self, regions):
         """Helper calculates area, aspect ratio, circularity for a list of skimage regions."""
-        areas, aspect_ratios, circularities = [], [], []
+        areas, diameters, aspect_ratios, circularities = [], [], [], []
         for region in regions:
             area = region.area
             areas.append(area)
+            
+            diameter = 2 * np.sqrt(area / np.pi) if area > self.eps else 0.0
+            diameters.append(diameter)
 
             # Aspect Ratio (minor/major), handles zero major axis
             minor_ax = region.minor_axis_length
@@ -354,7 +358,7 @@ class GrainMetrics():
             else:
                  circularities.append(0.0) # Assign 0 for invalid perimeter
 
-        return np.array(areas), np.array(aspect_ratios), np.array(circularities)
+        return np.array(areas), np.array(diameters), np.array(aspect_ratios), np.array(circularities)
     
     
     def _get_distribution_similarity(self, true_dist, pred_dist, metric_prefix):
@@ -438,8 +442,10 @@ class GrainMetrics():
 
         # Accumulate properties across all images in the batch
         batch_true_areas, batch_pred_areas = [], []
+        batch_true_diameters, batch_pred_diameters = [], []
         batch_true_aspect_ratios, batch_pred_aspect_ratios = [], []
         batch_true_circularities, batch_pred_circularities = [], []
+        
 
         first_img_labeled_true, first_img_labeled_pred = None, None
         first_img_processed = False
@@ -458,12 +464,14 @@ class GrainMetrics():
                 first_img_processed = True
 
             # Calculate properties for this image's grains
-            true_areas_img, true_ar_img, true_circ_img = self._calculate_shape_properties(true_regions)
-            pred_areas_img, pred_ar_img, pred_circ_img = self._calculate_shape_properties(pred_regions)
+            true_areas_img, true_diam_img, true_ar_img, true_circ_img = self._calculate_shape_properties(true_regions)
+            pred_areas_img, pred_diam_img, pred_ar_img, pred_circ_img = self._calculate_shape_properties(pred_regions)
 
             # Add this image's properties to the batch lists
             batch_true_areas.extend(true_areas_img)
             batch_pred_areas.extend(pred_areas_img)
+            batch_true_diameters.extend(true_diam_img) 
+            batch_pred_diameters.extend(pred_diam_img) 
             batch_true_aspect_ratios.extend(true_ar_img)
             batch_pred_aspect_ratios.extend(pred_ar_img)
             batch_true_circularities.extend(true_circ_img)
@@ -472,6 +480,8 @@ class GrainMetrics():
         # Convert accumulated lists to numpy arrays for calculations
         all_true_areas = np.array(batch_true_areas)
         all_pred_areas = np.array(batch_pred_areas)
+        all_true_diameters = np.array(batch_true_diameters) 
+        all_pred_diameters = np.array(batch_pred_diameters) 
         all_true_ar = np.array(batch_true_aspect_ratios)
         all_pred_ar = np.array(batch_pred_aspect_ratios)
         all_true_circ = np.array(batch_true_circularities)
@@ -485,13 +495,15 @@ class GrainMetrics():
         vis_id = f"batch_{self.vis_counter}" # Unique ID for this call's visualizations
 
         results.update(self._get_distribution_similarity(all_true_areas, all_pred_areas, "area"))
+        results.update(self._get_distribution_similarity(all_true_diameters, all_pred_diameters, "diameter"))
         results.update(self._get_distribution_similarity(all_true_ar, all_pred_ar, "aspect_ratio"))
         # results.update(self._get_distribution_similarity(all_true_circ, all_pred_circ, "circularity"))
 
         # Calculate Overall Similarity Score (weighted average of Wasserstein similarities)
-        weights = {'area': 0.9, 'aspect_ratio': 0.1} #, 'circularity': 0.05}
+        weights = {'area': 0.75, 'diameter': 0.2, 'aspect_ratio': 0.05} #, 'circularity': 0.05}
         shape_similarity_weighted = 0.0
         total_weight = 0.0
+        
         for prefix, weight in weights.items():
              metric_key = f'{prefix}_{self._DISTRIBUTION_METRICS_SUFFIXES[0]}' # Using Wasserstein as the basis for overall score
              if metric_key in results:
@@ -517,6 +529,7 @@ class GrainMetrics():
         if visualize and self.visualization_dir:
             vis_data = {
                 'true_areas': all_true_areas, 'pred_areas': all_pred_areas,
+                'true_diameters': all_true_diameters, 'pred_diameters': all_pred_diameters,
                 'true_aspect_ratios': all_true_ar, 'pred_aspect_ratios': all_pred_ar,
                 #'true_circularities': all_true_circ, 'pred_circularities': all_pred_circ
             }
