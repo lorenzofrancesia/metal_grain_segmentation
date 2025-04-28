@@ -37,6 +37,7 @@ class SegmentationDataset(Dataset):
         mean (list or None, optional): Mean values for normalization. If None, they will be calculated. Default is None.
         std (list or None, optional): Standard deviation values for normalization. If None, they will be calculated. Default is None.
         negative (bool, optional): Whether to invert the mask values (1 -> 0, 0 -> 1). Default is False.
+        color_mode (str, optional): Color mode to convert the images to. Default is "RGB"".
         threshold (float, optional): Threshold for converting masks to binary. Default is 0.5.
     """
     def __init__(self, 
@@ -50,7 +51,7 @@ class SegmentationDataset(Dataset):
                  mean=None, 
                  std=None, 
                  negative=False,
-                 color_space="LAB", 
+                 color_mode="RGB", 
                  threshold=0.5):
         
         self.image_dir = image_dir
@@ -64,7 +65,7 @@ class SegmentationDataset(Dataset):
         self.verbose = verbose
         self.threshold = threshold
         self.augment = augment
-        self.color_space = color_space
+        self.color_space = color_mode
         
         extracted_dims = get_resize_dims_from_transform(self.image_transform)
         if extracted_dims:
@@ -228,7 +229,14 @@ class SegmentationDataset(Dataset):
             full_img_path = os.path.join(self.image_dir, img_path)
             try:
                 img = Image.open(full_img_path).convert("RGB")  # Load directly
+                if self.color_space not in ['RGB', "None", None]:
+                    try:
+                        img = Image.open(full_img_path).convert(self.color_space)
+                    except Exception as e:
+                        pass
                 img_np = np.array(img, dtype=np.float32) / 255.0  # Normalize to [0, 1]
+                
+                
 
                 pixel_sum += img_np.sum(axis=(0, 1))  # Sum across height and width
                 pixel_squared_sum += (img_np ** 2).sum(axis=(0, 1))
