@@ -18,7 +18,8 @@ import torchvision.transforms as transforms
 from torch.utils.tensorboard import SummaryWriter
 
 from data.dataset import SegmentationDataset
-from utils.metrics import BinaryMetrics, GrainMetrics
+from utils.metrics import BinaryMetrics#, GrainMetrics
+from utils.metrics_log import GrainMetrics
 
 class Trainer():
     """
