@@ -315,8 +315,8 @@ def offline_augmentation(image_dir,
 
 if __name__ == "__main__":
     
-    image_dir = r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\electrical_steel_dataset_plus_aug3\train\images"
-    mask_dir = r"C:\Users\lorenzo.francesia\OneDrive - Swerim\Documents\Project\datasets\electrical_steel_dataset_plus_aug3\train\masks"
+    image_dir = r"P:\Lab_Gemensam\Lorenzo\datasets\pag_aug\train\images"
+    mask_dir = r"P:\Lab_Gemensam\Lorenzo\datasets\pag_aug\train\masks"
                 
     offline_augmentation(image_dir= image_dir,
                         mask_dir= mask_dir,
@@ -325,5 +325,5 @@ if __name__ == "__main__":
                         flip_v=True,
                         flip_hv=True,
                         rand_crop=True,
-                        num_crops=1
+                        num_crops=4
     )

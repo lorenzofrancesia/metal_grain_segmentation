@@ -8,10 +8,10 @@ def main():
     # 1. Define the Hyperparameter Space
     hyperparameter_space = {
         "model_params": {
-            "decoder_attention_type": [None, "scse"], #scse
+            "decoder_attention_type": [None], #scse
             "decoder_use_batchnorm": [True],
-            "encoder_name": ["resnet34d"], #["resnest101e", "efficientnetv2_l", "seresnext101_32x8d", "hrnet_w48", "regnety_160"],    #swin_base_patch4_window7_224, maxvit_base_tf_224
-            "encoder_weights": [None, "imagenet"],
+            "encoder_name": ["resnet34"], #["resnest101e", "efficientnetv2_l", "seresnext101_32x8d", "hrnet_w48", "regnety_160"],    #swin_base_patch4_window7_224, maxvit_base_tf_224
+            "encoder_weights": ["imagenet"],
         },
         "optimizer_params": {
             "optimizer": ["Adam"],
@@ -20,16 +20,16 @@ def main():
             "weight_decay": {"low": 5e-5, "high": 2e-3, "log": True},
         },
         "loss_params": {
-            "loss_function": ["Combo"],
-            "loss_function1": ["BCE"],
-            "loss_function2": ["FocalTversky"],
-            "loss_function1_weight": [1],
-            "loss_function2_weight": {"low": 0.1, "high": 10, "log": False},
-            "alpha": {"low": 0.1, "high": .99, "log": False},
-            "beta": {"low": 0.1, "high": 0.99, "log": False},
-            "gamma": {"low": 0.1, "high": 2, "log": False},
+            "loss_function": ["BCE"],
+            #"loss_function1": ["BCE"],
+            #"loss_function2": ["FocalTversky"],
+            #"loss_function1_weight": [1],
+            #"loss_function2_weight": {"low": 0.1, "high": 10, "log": False},
+            #"alpha": {"low": 0.1, "high": .99, "log": False},
+            #"beta": {"low": 0.1, "high": 0.99, "log": False},
+            #"gamma": {"low": 0.1, "high": 2, "log": False},
             # topoloss_patch": [32, 64, 128],
-            "positive_weight": {"low": 3, "high": 6, "log": False},
+            "positive_weight": {"low": 2, "high": 6, "log": False},
             # "alpha_focal": [0.8],
             # "gamma_focal": [0.2],
         },
@@ -49,34 +49,34 @@ def main():
         },
         "other_params": {
             "batch_size": [64],
-            "epochs": [50],
+            "epochs": [10],
             "normalize": [True],
             "negative": [True], 
             "augment": [True], 
             "transform": [
-                "['transforms.Resize((128, 128))','transforms.ToTensor()']"
+                "['transforms.Resize((256, 256))','transforms.ToTensor()']"
             ],
         },
     }
 
     # 2. Define the Data Directory and Output Directory
-    data_dir =  r"P:\Lab_Gemensam\Lorenzo\datasets\data_plusplus" #"C:\\Users\\lorenzo.francesia\\Documents\\github\\data_plusplus" 
-    output_dir = "C:\\Users\\lorenzo.francesia\\Documents\\github\\runs" 
+    data_dir =  r"P:\Lab_Gemensam\Lorenzo\datasets\plusplus" #"C:\\Users\\lorenzo.francesia\\Documents\\github\\data_plusplus" 
+    output_dir = "C:\\Users\\lorenzo.francesia\\Documents\\github\\runs\\final_optim" 
 
     # 3. Get the Model Class
-    model_class = torchseg.Unet
+    model_class = torchseg.UnetPlusPlus
 
     # 4. Create the Hyperparameter Optimizer
     optimizer = HyperparameterOptimizer(
         data_dir=data_dir,
         model_class=model_class,
         hyperparameter_space=hyperparameter_space,
-        study_name="BCEFT_ADAM_resnet34d_PLUSPLUS_50epochs",
+        study_name="U++_BCE_ADAM_resnet34_PLUSPLUS_10epochs",
         output_dir=output_dir,
-        storage="unet.db",
-        objective_names=("grain_distribution_similarity",),
+        storage="final.db",
+        objective_names=("grain_overall_similarity",),
         objective_directions=("maximize",)
-    )
+    ) 
 
     # 5. Run the Optimization
     optimizer.optimize(n_trials=50) 

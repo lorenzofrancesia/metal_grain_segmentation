@@ -77,8 +77,8 @@ class ModeltrainingGUI:
 
         self.epochs_var = tk.StringVar(value="1")
         self.batch_size_var = tk.StringVar(value="6")
-        self.data_dir_var = tk.StringVar(value=r"P:\Lab_Gemensam\Lorenzo\datasets\data_plusplus")
-        self.output_dir_var = tk.StringVar(value="c:\\Users\\lorenzo.francesia\\Documents\\github\\runs")
+        self.data_dir_var = tk.StringVar(value=r"P:\Lab_Gemensam\Lorenzo\datasets\plusplus")
+        self.output_dir_var = tk.StringVar(value="c:\\Users\\lorenzo.francesia\\Documents\\github\\runs\\final_optim")
         self.normalize_var = tk.BooleanVar(value=False)
         self.negative_var = tk.BooleanVar(value=False)
         self.augment_var = tk.BooleanVar(value=False)
